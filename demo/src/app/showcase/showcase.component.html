@@ -1,0 +1,140 @@
+<section class="playground">
+  <h2>Playground</h2>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Map engine">
+      <button [class.active]="engine() === 'maplibre'" (click)="setEngine('maplibre')">MapLibre</button>
+      <button [class.active]="engine() === 'openlayers'" (click)="setEngine('openlayers')">OpenLayers</button>
+    </div>
+    <label class="fir">
+      FIR
+      <select (change)="onFir($event)">
+        @for (grp of firGroups(); track grp.label) {
+          <optgroup [label]="grp.label">
+            @for (f of grp.firs; track f.designator) {
+              <option [value]="f.designator" [selected]="f.designator === firId()">
+                {{ f.name }} ({{ f.designator }})
+              </option>
+            }
+          </optgroup>
+        }
+      </select>
+    </label>
+  </div>
+
+  <div class="stage">
+    <div class="stage-main">
+      <div #map class="map"></div>
+    </div>
+    <aside class="stage-style" (change)="onPanelChange($event)">
+      <interactive-code language="typescript">
+        <textarea>import { SigmetDraw, ${adapter} } from "@softwarity/sigmet-draw";
+${mapImport}
+
+const map = new Map({ /* your basemap, controls, projection */ });
+
+const sigmet = new SigmetDraw({
+  adapter: new ${adapter}({ map }),
+  fir,
+${labelFn}  label: (r) => r.tac,
+  style: {
+${area}    area: { fill: { color: "${areaColor}", opacity: ${areaOpacity} },
+${area}      line: { color: "${areaLineColor}", width: ${areaLineWidth} } },
+${guide}    guide: { color: "${guideColor}", width: ${guideWidth} },
+${vertex}    vertex: { color: "${vertexColor}" },
+${collinear}    collinearVertex: { color: "${collinearColor}" },
+${control}    controlHandle: { color: "${controlColor}" },
+${label}    label: { color: "${labelColor}", size: ${labelSize} },
+  },
+});</textarea>
+        <code-binding key="adapter" type="select" options="MapLibreAdapter,OpenLayersAdapter" [value]="adapterName()"></code-binding>
+        <code-binding key="mapImport" type="readonly" [value]="mapImport()"></code-binding>
+        <code-binding key="labelFn" type="comment" value="true"></code-binding>
+        <code-binding key="area" type="comment" value="true"></code-binding>
+        <code-binding key="areaColor" type="color" value="#f0883e"></code-binding>
+        <code-binding key="areaOpacity" type="number" value="0.35" min="0" max="1" step="0.05"></code-binding>
+        <code-binding key="areaLineColor" type="color" value="#f0883e"></code-binding>
+        <code-binding key="areaLineWidth" type="number" value="2" min="1" max="6" step="1"></code-binding>
+        <code-binding key="guide" type="comment" value="true"></code-binding>
+        <code-binding key="guideColor" type="color" value="#58a6ff"></code-binding>
+        <code-binding key="guideWidth" type="number" value="4" min="1" max="8" step="1"></code-binding>
+        <code-binding key="vertex" type="comment" value="true"></code-binding>
+        <code-binding key="vertexColor" type="color" value="#ffffff"></code-binding>
+        <code-binding key="collinear" type="comment" value="true"></code-binding>
+        <code-binding key="collinearColor" type="color" value="#8b949e"></code-binding>
+        <code-binding key="control" type="comment" value="true"></code-binding>
+        <code-binding key="controlColor" type="color" value="#58a6ff"></code-binding>
+        <code-binding key="label" type="comment" value="true"></code-binding>
+        <code-binding key="labelColor" type="color" value="#ffffff"></code-binding>
+        <code-binding key="labelSize" type="number" value="13" min="8" max="24" step="1"></code-binding>
+      </interactive-code>
+    </aside>
+  </div>
+  <div class="tac">{{ tac() }}</div>
+  <p class="hint">
+    The toolbar is the engine's <strong>native control</strong> (top-right), with SVG icons —
+    MapLibre vs OpenLayers styling. Select a tool: a default shape is dropped, then drag the handles.
+  </p>
+
+  <h2 class="api">Every tool is a function call</h2>
+  <p class="muted">
+    Each button calls the matching method on the live map. Wire your own buttons, and listen for
+    <code>change</code> to get the TAC, the parametric geometry and the GeoJSON area.
+  </p>
+  <div class="methods">
+    @for (t of tools; track t.method) {
+      <button class="method" (click)="runTool(t.method)" [title]="t.desc">
+        <span class="ic" [innerHTML]="icon(t.method)"></span>
+        <code>sigmet.{{ t.method }}()</code>
+      </button>
+    }
+  </div>
+  <interactive-code language="typescript">
+    <textarea>circleBtn.onclick = () => sigmet.circle();   // wire your own buttons
+
+sigmet.on("change", ({ tac, geometry, area }) => {
+  console.log(tac);   // ICAO text, the parametric geometry, and the clipped GeoJSON
+});</textarea>
+  </interactive-code>
+
+  <h2 class="api">Load a TAC — <code>fromTAC</code> → <code>load</code></h2>
+  <p class="muted">Draw a shape above (the field fills with its TAC), edit it, then draw it back.</p>
+  <div class="tac-load">
+    <input
+      class="tac-input"
+      [value]="tacInput()"
+      (input)="tacInput.set($any($event.target).value)"
+      placeholder="e.g. WI 250NM OF PSN N4030 E04830"
+    />
+    <button class="apply" (click)="applyTac()">Draw it</button>
+  </div>
+  @if (tacError()) {
+    <p class="err">⚠ {{ tacError() }}</p>
+  }
+  <interactive-code language="typescript">
+    <textarea>import { fromTAC } from "@softwarity/sigmet-draw/core";
+
+const geometry = fromTAC("${tac}");
+sigmet.load(geometry);   // renders it for editing</textarea>
+    <code-binding key="tac" type="readonly" [value]="tacInput()"></code-binding>
+  </interactive-code>
+
+  <h2 class="api">Change the style at runtime</h2>
+  <p class="muted">
+    Less common, but you can restyle after grafting — only what you pass is overridden,
+    the rest keeps its current value.
+  </p>
+  <interactive-code language="typescript">
+    <textarea>sigmet.setStyle({ area: { fill: { opacity: 0.5 } } });
+sigmet.setLabel((r) => r.geometry.kind);   // or change the dynamic text</textarea>
+  </interactive-code>
+
+  <h2 class="api">Core only (no map)</h2>
+  <interactive-code language="typescript">
+    <textarea>import { toTAC, fromTAC, toArea } from "@softwarity/sigmet-draw/core";
+
+const g = fromTAC("WI 250NM OF PSN N2706 W07306");
+toTAC(g);             // "WI 250NM OF PSN N2706 W07306"
+toArea(g, { fir });   // GeoJSON Feature, clipped to the FIR</textarea>
+  </interactive-code>
+</section>

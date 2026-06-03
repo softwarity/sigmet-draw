@@ -1,0 +1,60 @@
+{
+  "name": "@softwarity/sigmet-draw",
+  "version": "0.0.0",
+  "description": "Draw SIGMET/AIRMET geometries on any map (grafts onto MapLibre or OpenLayers, Terra-Draw-style) and (de)serialize them to/from ICAO TAC.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./maplibre": {
+      "types": "./dist/map/maplibre-adapter.d.ts",
+      "import": "./dist/map/maplibre-adapter.js"
+    },
+    "./openlayers": {
+      "types": "./dist/map/openlayers-adapter.d.ts",
+      "import": "./dist/map/openlayers-adapter.js"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "demo": "vite --config vite.demo.config.ts",
+    "demo:build": "vite build --config vite.demo.config.ts"
+  },
+  "dependencies": {
+    "@turf/boolean-point-in-polygon": "^7.1.0",
+    "@turf/buffer": "^7.1.0",
+    "@turf/circle": "^7.1.0",
+    "@turf/helpers": "^7.1.0",
+    "@turf/intersect": "^7.1.0",
+    "@types/geojson": "^7946.0.14"
+  },
+  "peerDependencies": {
+    "maplibre-gl": ">=5",
+    "ol": ">=9"
+  },
+  "peerDependenciesMeta": {
+    "maplibre-gl": { "optional": true },
+    "ol": { "optional": true }
+  },
+  "devDependencies": {
+    "maplibre-gl": "^5.24.0",
+    "ol": "^10.9.0",
+    "typescript": "^5.5.4",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.8"
+  }
+}

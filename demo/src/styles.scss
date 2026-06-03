@@ -1,0 +1,134 @@
+@use "@angular/material" as mat;
+
+html {
+  @include mat.system-classes();
+  color-scheme: light;
+  @include mat.theme((color: mat.$violet-palette));
+
+  & body.dark-mode {
+    color-scheme: dark;
+  }
+}
+
+:root {
+  --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  --bg-primary: #161b22;
+  --bg-secondary: #21262d;
+  --text-primary: #e6edf3;
+  --text-secondary: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent-blue: #58a6ff;
+  --accent-orange: #f0883e;
+  --accent-green: #238636;
+  --border-color: #30363d;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg-gradient);
+  background-attachment: fixed;
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent-blue);
+  text-decoration: none;
+  &:hover { text-decoration: underline; }
+}
+
+code {
+  font-family: "Courier New", Consolas, monospace;
+  background-color: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: var(--accent-blue);
+}
+
+h2 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin: 0 0 24px 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 28px 0 12px;
+  color: var(--text-primary);
+}
+
+/* Editable tokens in interactive-code: the built-in "hand-drawn" style — an
+   organic, sketched border so the user sees they can change them live. */
+interactive-code::part(interactive) {
+  cursor: pointer;
+  text-decoration: none;
+  border: 1.5px solid var(--code-interactive-border-color, var(--accent-blue));
+  border-radius: 55% 45% 50% 40% / 40% 50% 45% 55%;
+  padding: 2px 8px;
+}
+interactive-code::part(interactive):hover {
+  box-shadow: 0 0 0 1px var(--code-interactive-border-color, var(--accent-blue));
+}
+
+/* Native map toolbars (rendered outside component encapsulation). */
+.maplibregl-ctrl-group button svg,
+.ol-control.sigmet-toolbar button svg {
+  display: block;
+  margin: auto;
+}
+
+/* SIGMET tool toolbar — horizontal, centred at the top so it clears the native
+   controls (zoom/compass/globe right, attribution bottom). */
+.sigmet-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex !important;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: center;
+  max-width: none;
+}
+/* Icons use currentColor — set an explicit dark colour so they're visible on the
+   light button backgrounds (otherwise they inherit the near-white theme text). */
+.sigmet-toolbar button {
+  color: #24292f;
+}
+.sigmet-toolbar button:hover {
+  background: #d0d7de;
+}
+.sigmet-toolbar button.active {
+  background: var(--accent-blue);
+  color: #0b1622;
+}
+.sigmet-toolbar button.active:hover {
+  background: var(--accent-blue);
+}
+
+.ol-control.sigmet-toolbar {
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 6px;
+  padding: 2px;
+}
+.ol-control.sigmet-toolbar button {
+  width: 1.7em;
+  height: 1.7em;
+  margin: 1px;
+  background: #fff;
+  color: #24292f;
+}
+.ol-control.sigmet-toolbar button:hover {
+  background: #eaeef2;
+}
+
