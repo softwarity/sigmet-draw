@@ -2,6 +2,10 @@
 
 ## 1.0.2
 
+- Remove angular cache files
+- Complete .gitignore to prevent them from being added again
+- Add tests for toolbar
+
 ---
 
 ## 1.0.1
