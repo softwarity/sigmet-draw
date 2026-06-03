@@ -2,6 +2,8 @@
 
 ## 1.0.3
 
+ - Remove firs.geojson file from root 
+
 ---
 
 ## 1.0.2
