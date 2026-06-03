@@ -18,11 +18,7 @@ import {
   OpenLayersAdapter,
   SigmetDraw,
 } from "@softwarity/sigmet-draw";
-import type {
-  FirInput,
-  SigmetStyleInput,
-  ToolbarItem,
-} from "@softwarity/sigmet-draw";
+import type { FirInput, SigmetStyleInput, ToolbarPosition } from "@softwarity/sigmet-draw";
 import { Map as MapLibreMap, NavigationControl } from "maplibre-gl";
 import GeoJSON from "ol/format/GeoJSON";
 import TileLayer from "ol/layer/Tile";
@@ -40,17 +36,20 @@ registerInteractiveCode();
 
 type Engine = "maplibre" | "openlayers";
 type ToolMethod =
-  | "circle" | "meridian" | "parallel" | "latBand" | "lonBand" | "quadrant"
+  | "circle" | "tropicalCyclone" | "meridian" | "parallel" | "latBand" | "lonBand" | "quadrant"
   | "lineSide" | "corridor" | "wideLine" | "polygon" | "point" | "entireFir";
 
 interface Tool {
   method: ToolMethod;
   label: string;
   desc: string;
+  /** Override the displayed call signature (e.g. the TC tool takes a centre). */
+  call?: string;
 }
 
 const TOOLS: Tool[] = [
   { method: "circle", label: "Circle", desc: "Circle — WI nnNM OF PSN (drag centre & radius)" },
+  { method: "tropicalCyclone", label: "Cyclone", call: "s.tropicalCyclone(center)", desc: "Tropical cyclone — WI nnnNM OF TC CENTRE (centre required; fixed, drag radius)" },
   { method: "meridian", label: "Meridian", desc: "Meridian half-plane — E OF / W OF a longitude" },
   { method: "parallel", label: "Parallel", desc: "Parallel half-plane — N OF / S OF a latitude" },
   { method: "latBand", label: "Lat band", desc: "Latitude band — between two parallels" },
@@ -144,6 +143,22 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   private styleOverride?: SigmetStyleInput;
   /** Whether the on-shape label (the live TAC) is enabled (toggled in the panel). */
   private labelEnabled = true;
+  /** Whether the hover tooltip is enabled (toggled in the panel). */
+  private tooltipOn = false;
+  /** Force radii/widths to NM only (toggled in the panel; needs a rebuild). */
+  private nmOnly = false;
+  /** Whether the turnkey toolbar is rendered (toggled via the block comment). */
+  private toolbarOn = true;
+  /** Whether the TC button has a centre (FIR centroid here) → enabled vs greyed. */
+  private tcOn = true;
+  /** Live toolbar layout edited in the panel (per-side padding by active edges). */
+  private tbPos: ToolbarPosition = "top-left";
+  private tbPad1 = 10;
+  private tbPad2 = 10;
+  /** Edge names + centred flag driving the conditional padding display. */
+  protected readonly tbEdge1 = signal("top"); // primary (anchored) edge
+  protected readonly tbEdge2 = signal("left"); // cross-axis edge (corners only)
+  protected readonly tbCentered = signal(false);
   private sigmet?: SigmetDraw;
   private mlMap?: MapLibreMap;
   private olMap?: OlMap;
@@ -193,6 +208,7 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
       const fir = (await fetch(`assets/firs/${designator}.json`).then((r) => r.json())) as FirInput;
       if (this.firId() !== designator) return;
       this.sigmet.setFir(fir); // clears the current drawing
+      this.syncTcCenter(); // the centroid substitute moved with the FIR
       this.tac.set("— pick a shape —");
       // Deselect the active tool button too.
       this.mapEl()
@@ -227,12 +243,38 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   }
 
   protected runTool(method: ToolMethod): void {
-    (this.sigmet?.[method] as (() => void) | undefined)?.call(this.sigmet);
+    const s = this.sigmet;
+    if (!s) return;
+    // The TC tool needs a centre; the demo has no TC input, so use the FIR centroid.
+    if (method === "tropicalCyclone") {
+      s.tropicalCyclone(s.firCenter());
+      return;
+    }
+    (s[method] as () => void)();
   }
 
   protected clear(): void {
     this.sigmet?.clear();
     this.tac.set("— pick a shape —");
+  }
+
+  /** Enable/grey the TC button: give it the FIR centroid, or `null` to disable. */
+  private syncTcCenter(): void {
+    if (this.sigmet?.toolbar) {
+      this.sigmet.toolbar.tcCenter = this.tcOn ? this.sigmet.firCenter() : null;
+    }
+  }
+
+  /** The current per-side padding object (active edges from the position). */
+  private tbPaddingObj(): { top?: string; bottom?: string; left?: string; right?: string } {
+    const [edge, sec] = this.tbPos.split("-");
+    const pad: Record<string, string> = { [edge!]: `${this.tbPad1}px` };
+    if (sec) pad[sec] = `${this.tbPad2}px`;
+    return pad;
+  }
+
+  private applyTbPadding(): void {
+    if (this.sigmet?.toolbar) this.sigmet.toolbar.padding = this.tbPaddingObj();
   }
 
   /**
@@ -249,6 +291,42 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
     if (t?.key === "labelFn") {
       this.labelEnabled = t.value === true || t.value === "true";
       this.sigmet?.setLabel(this.labelEnabled ? (r) => r.tac : null);
+      return;
+    }
+    if (t?.key === "tooltipFn") {
+      this.tooltipOn = t.value === true || t.value === "true";
+      this.sigmet?.setTooltip(this.tooltipOn ? (r) => r.tac : null); // live, no rebuild
+      return;
+    }
+    if (t?.key === "nmOnly") {
+      this.nmOnly = t.value === true || t.value === "true";
+      void this.rebuild(); // construction-time option
+      return;
+    }
+    if (t?.key === "tbOff") {
+      this.toolbarOn = t.value === true || t.value === "true";
+      void this.rebuild(); // toolbar is a construction-time option
+      return;
+    }
+    if (t?.key === "tcEnabled") {
+      this.tcOn = t.value === true || t.value === "true";
+      this.syncTcCenter(); // live — enables/greys the TC button
+      return;
+    }
+    if (t?.key === "tbPosition") {
+      this.tbPos = String(t.value) as ToolbarPosition;
+      const [edge, sec] = this.tbPos.split("-");
+      this.tbEdge1.set(edge!);
+      this.tbEdge2.set(sec ?? "");
+      this.tbCentered.set(!sec);
+      if (this.sigmet?.toolbar) this.sigmet.toolbar.position = this.tbPos; // live re-place
+      this.applyTbPadding();
+      return;
+    }
+    if (t?.key === "tbPad1" || t?.key === "tbPad2") {
+      if (t.key === "tbPad1") this.tbPad1 = Number(t.value);
+      else this.tbPad2 = Number(t.value);
+      this.applyTbPadding();
       return;
     }
     if (t?.key === "mapImport") return; // readonly, engine-driven
@@ -285,6 +363,14 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
       label: on("label")
         ? { ...D.label, color: String(val("labelColor")), size: Number(val("labelSize")) }
         : D.label,
+      tooltip: on("tooltip")
+        ? {
+            ...D.tooltip,
+            color: String(val("tipColor")),
+            background: String(val("tipBg")),
+            maxWidth: `${Number(val("tipW"))}px`,
+          }
+        : D.tooltip,
     };
     this.styleOverride = style;
     this.sigmet?.setStyle(style);
@@ -409,8 +495,12 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
         fir,
         // Dynamic on-shape text — here the live TAC (styleable via `style.label`).
         label: this.labelEnabled ? (r) => r.tac : undefined,
+        tooltip: this.tooltipOn ? (r) => r.tac : undefined,
+        nauticalMilesOnly: this.nmOnly,
         // Re-apply any live style edits so they survive an engine switch.
         style: this.styleOverride,
+        // Turnkey native toolbar (built-in icons, all tools wired); omit → no toolbar.
+        toolbar: this.toolbarOn ? { position: this.tbPos, padding: this.tbPaddingObj() } : undefined,
       });
       this.sigmet.on("change", (r) => {
         this.tac.set(r.tac);
@@ -419,17 +509,8 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
       });
       await this.sigmet.ready();
 
-      // Native, engine-styled toolbar with SVG icons.
-      const items: ToolbarItem[] = this.tools.map((t) => ({
-        id: t.method,
-        title: t.desc,
-        label: t.label,
-        svg: ICONS[t.method] ?? "",
-        toggle: true,
-        onClick: () => this.runTool(t.method),
-      }));
-      items.push({ id: "clear", title: "Clear", label: "⌫", svg: ICONS["clear"], onClick: () => this.clear() });
-      adapter.addToolbar(items);
+      // No real TC input here → enable the TC button with the FIR centroid.
+      this.syncTcCenter();
 
       const b = this.sigmet.firBounds();
       this.mlMap?.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 28, animate: false });

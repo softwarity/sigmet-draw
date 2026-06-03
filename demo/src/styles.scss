@@ -86,22 +86,8 @@ interactive-code::part(interactive):hover {
   margin: auto;
 }
 
-/* SIGMET tool toolbar — horizontal, centred at the top so it clears the native
-   controls (zoom/compass/globe right, attribution bottom). */
-.sigmet-toolbar {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 3;
-  display: flex !important;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  justify-content: center;
-  max-width: none;
-}
-/* Icons use currentColor — set an explicit dark colour so they're visible on the
-   light button backgrounds (otherwise they inherit the near-white theme text). */
+/* Placement/flow of the SIGMET toolbar is handled inline by the library
+   (via the `toolbar` option / `sigmet.toolbar`). Only colours are themed here. */
 .sigmet-toolbar button {
   color: #24292f;
 }

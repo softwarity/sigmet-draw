@@ -57,8 +57,28 @@ export function collapseRing(
  * The TAC width is a 2-digit number: stay in KM up to 99, then switch to NM
  * (physically wider) and cap at 99 NM — the widest "APRX nnNM/KM WID" allows.
  */
-export function widthFor(halfNM: number): { unit: "KM" | "NM"; width: number } {
-  const fullKM = halfNM * 2 * 1.852;
-  if (fullKM <= 99) return { unit: "KM", width: Math.max(1, Math.round(fullKM)) };
-  return { unit: "NM", width: Math.min(99, Math.round(halfNM * 2)) };
+export function widthFor(halfNM: number, nmOnly = false): { unit: "KM" | "NM"; width: number } {
+  if (!nmOnly) {
+    const fullKM = halfNM * 2 * 1.852;
+    if (fullKM <= 99) return { unit: "KM", width: Math.max(1, Math.round(fullKM)) };
+  }
+  return { unit: "NM", width: Math.min(99, Math.max(1, Math.round(halfNM * 2))) };
+}
+
+/**
+ * Circle / tropical-cyclone radius from a distance in nautical miles, following
+ * the same 2-digit/3-digit rule: stay in KM up to `cap`, then switch to NM
+ * (physically larger) capped at `cap`. `cap` is 99 for a plain circle, 999 for a
+ * tropical cyclone (`WI nn[n]KM (or nn[n]NM) OF …`).
+ */
+export function radiusFor(
+  radiusNM: number,
+  cap: number,
+  nmOnly = false,
+): { unit: "KM" | "NM"; value: number } {
+  if (!nmOnly) {
+    const km = radiusNM * 1.852;
+    if (km <= cap) return { unit: "KM", value: Math.max(1, Math.round(km)) };
+  }
+  return { unit: "NM", value: Math.min(cap, Math.max(1, Math.round(radiusNM))) };
 }

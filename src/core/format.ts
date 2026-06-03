@@ -70,6 +70,10 @@ export function toTAC(
     case "circle":
       return `WI ${geometry.radius}${geometry.unit} OF PSN ${pt(geometry.center)}`;
 
+    case "tropicalCyclone":
+      // The centre is not encoded — it's the TC SIGMET's separate PSN element.
+      return `WI ${geometry.radius}${geometry.unit} OF TC CENTRE`;
+
     case "wideLine":
       return `APRX ${geometry.width}${geometry.unit} WID LINE BTN ${joinPoints(geometry.points)}`;
 

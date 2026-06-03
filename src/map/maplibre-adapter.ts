@@ -13,10 +13,12 @@ import type {
   PointerEvent,
   Projection,
   ToolbarItem,
+  ToolbarOptions,
 } from "./adapter.js";
 import { DEFAULT_STYLE } from "./style.js";
 import type { SigmetStyle } from "./style.js";
 import { populateToolbar } from "./toolbar.js";
+import { applyTooltipStyle } from "./tooltip.js";
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
@@ -87,6 +89,7 @@ export class MapLibreAdapter implements MapAdapter {
   /** Captured pointer handlers, kept so `destroy()` can detach them. */
   private pointerHandlers: PointerHandlers | undefined;
   private toolbarEl: HTMLElement | undefined;
+  private tooltipEl: HTMLElement | undefined;
   /** True between pointer down and up — used to skip hit-testing during a drag. */
   private dragging = false;
 
@@ -98,6 +101,25 @@ export class MapLibreAdapter implements MapAdapter {
   setStyle(style: SigmetStyle): void {
     this.style = style;
     if (this.map.getLayer("area-fill")) this.applyStyle();
+    if (this.tooltipEl) applyTooltipStyle(this.tooltipEl, style.tooltip);
+  }
+
+  setTooltip(text: string | null, at: LatLng): void {
+    if (text == null) {
+      if (this.tooltipEl) this.tooltipEl.style.display = "none";
+      return;
+    }
+    if (!this.tooltipEl) {
+      this.tooltipEl = document.createElement("div");
+      this.tooltipEl.className = "sigmet-tooltip";
+      applyTooltipStyle(this.tooltipEl, this.style.tooltip);
+      this.map.getContainer().appendChild(this.tooltipEl);
+    }
+    const p = this.map.project([at.lon, at.lat]);
+    this.tooltipEl.textContent = text;
+    this.tooltipEl.style.display = "block";
+    this.tooltipEl.style.left = `${p.x}px`;
+    this.tooltipEl.style.top = `${p.y}px`;
   }
 
   ready(): Promise<void> {
@@ -122,15 +144,16 @@ export class MapLibreAdapter implements MapAdapter {
       ?.setData?.(data);
   }
 
-  addToolbar(items: ToolbarItem[]): void {
-    if (this.toolbarEl) return; // idempotent
-    // Attached to the map container (not a corner) so the host can position it
-    // freely (e.g. top-centre) without colliding with the native controls.
+  addToolbar(items: ToolbarItem[], options?: ToolbarOptions): HTMLElement {
+    if (this.toolbarEl) return this.toolbarEl; // idempotent
+    // Use MapLibre's native control-group classes so the buttons inherit the
+    // engine's native look; placement is set by populateToolbar from `options`.
     const el = document.createElement("div");
     el.className = "maplibregl-ctrl maplibregl-ctrl-group sigmet-toolbar";
-    populateToolbar(el, items);
+    populateToolbar(el, items, options);
     this.map.getContainer().appendChild(el);
     this.toolbarEl = el;
+    return el;
   }
 
   getCenter(): LatLng {
@@ -197,6 +220,8 @@ export class MapLibreAdapter implements MapAdapter {
     for (const id of SOURCE_IDS) if (this.map.getSource(id)) this.map.removeSource(id);
     this.toolbarEl?.remove();
     this.toolbarEl = undefined;
+    this.tooltipEl?.remove();
+    this.tooltipEl = undefined;
     this.readyPromise = undefined;
     this.setCursor("");
     this.map.dragPan.enable();

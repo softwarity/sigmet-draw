@@ -83,6 +83,17 @@ export function fromTAC(input: string): SigmetGeometry {
     };
   }
 
+  // 09b — WI <radius><unit> OF TC CENTRE  (tropical cyclone; centre not encoded)
+  const tc = text.match(/^WI (\d+(?:\.\d+)?)(KM|NM) OF TC CENTRE$/);
+  if (tc) {
+    return {
+      kind: "tropicalCyclone",
+      radius: Number(tc[1]),
+      unit: tc[2] as DistanceUnit,
+      center: { lat: 0, lon: 0 }, // placeholder — the host supplies the real centre
+    };
+  }
+
   // 09 — WI <radius><unit> OF [PSN] <coord>  (circle)
   const circle = text.match(/^WI (\d+(?:\.\d+)?)(KM|NM) OF (?:PSN )?(.+)$/);
   if (circle) {

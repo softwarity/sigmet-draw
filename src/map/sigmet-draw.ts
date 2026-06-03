@@ -24,9 +24,11 @@ import type {
 import { toArea, toTAC } from "../core/index.js";
 import type { FirInput, LatLng, LineSide, SigmetGeometry } from "../core/index.js";
 import type { MapAdapter, PointerEvent } from "./adapter.js";
-import { collapseCollinear, collapseRing, perpDist, widthFor } from "./geometry.js";
+import { collapseCollinear, collapseRing, perpDist, radiusFor, widthFor } from "./geometry.js";
 import { DEFAULT_STYLE, mergeStyle } from "./style.js";
 import type { SigmetStyle, SigmetStyleInput } from "./style.js";
+import { SigmetToolbar } from "./toolbar-controller.js";
+import type { ToolbarConfig } from "./toolbar-controller.js";
 
 /** Returns the text to show on the shape for a given result (`""` hides it). */
 export type LabelFn = (result: SigmetResult) => string;
@@ -41,11 +43,24 @@ export interface SigmetDrawOptions {
   fir: FirInput;
   /** Partial style override for the drawing overlays (merged onto the defaults). */
   style?: SigmetStyleInput;
+  /** Force radii/widths to nautical miles only (never emit KM). Default: false. */
+  nauticalMilesOnly?: boolean;
+  /**
+   * Render a turnkey native toolbar (built-in icons, all tools wired). `true` for
+   * defaults, or a config object (position, padding, tools, `tcCenter`, …). Tweak
+   * it live afterwards via {@link SigmetDraw.toolbar}.
+   */
+  toolbar?: boolean | ToolbarConfig;
   /**
    * Dynamic text rendered on the shape — e.g. `(r) => r.tac`. Omit for no label;
    * return `""` from the function to hide it for a given geometry.
    */
   label?: LabelFn;
+  /**
+   * Floating tooltip shown on hover over the geometry — e.g. `(r) => r.tac`.
+   * Omit for none; styleable via `style.tooltip`.
+   */
+  tooltip?: LabelFn;
 }
 
 export interface SigmetResult {
@@ -148,11 +163,15 @@ export class SigmetDraw {
   /** All boundary rings of the FIR, for snapping line endpoints to the border. */
   private firRingList!: [number, number][][];
   private readonly listeners = new Set<(r: SigmetResult) => void>();
+  private readonly tacListeners = new Set<(tac: string) => void>();
   private readonly readyPromise: Promise<void>;
 
   private active: SigmetGeometry | null = null;
   private dragTarget: DragTarget | null = null;
   private destroyed = false;
+  /** When true, radii/widths are always nautical miles (never KM). */
+  private nmOnly = false;
+  private _toolbar?: SigmetToolbar;
   /** Coalesces drag re-renders to one per animation frame (turf work is costly). */
   private renderScheduled = false;
   /** UI-only: bearing of the circle's radius handle so it follows the cursor. */
@@ -167,11 +186,19 @@ export class SigmetDraw {
   private lonBounds!: [number, number];
   private style: SigmetStyle;
   private labelFn: LabelFn | null;
+  private tooltipFn: LabelFn | null;
+  private lastResult: SigmetResult | null = null;
 
   constructor(opts: SigmetDrawOptions) {
     this.adapter = opts.adapter;
     this.style = mergeStyle(DEFAULT_STYLE, opts.style);
     this.labelFn = opts.label ?? null;
+    this.tooltipFn = opts.tooltip ?? null;
+    this.nmOnly = opts.nauticalMilesOnly ?? false;
+    if (opts.toolbar) {
+      const cfg: ToolbarConfig = opts.toolbar === true ? {} : opts.toolbar;
+      this._toolbar = new SigmetToolbar(this, this.adapter, cfg);
+    }
     // Hand the resolved style to the adapter before it builds its overlays.
     this.adapter.setStyle(this.style);
     this.applyFir(opts.fir);
@@ -179,7 +206,14 @@ export class SigmetDraw {
     this.readyPromise = this.adapter.ready().then(() => {
       // The FIR is drawn by the host on its own map — not by this module.
       this.adapter.onPointer((ev) => this.onPointer(ev));
+      this._toolbar?.attach();
     });
+  }
+
+  /** The turnkey toolbar controller (when `toolbar` was enabled in the options),
+   *  for live tweaks: `sigmet.toolbar.tcCenter = …`, `…position = "bottom"`, etc. */
+  get toolbar(): SigmetToolbar | undefined {
+    return this._toolbar;
   }
 
   /** Restyle the overlays live (partial override, merged onto the current style). */
@@ -192,6 +226,12 @@ export class SigmetDraw {
   setLabel(label: LabelFn | null): void {
     this.labelFn = label;
     if (this.active) this.renderActive();
+  }
+
+  /** Set (or clear, with `null`) the hover tooltip content function. */
+  setTooltip(tooltip: LabelFn | null): void {
+    this.tooltipFn = tooltip;
+    if (!tooltip) this.adapter.setTooltip(null, { lat: 0, lon: 0 });
   }
 
   private applyFir(fir: FirInput): void {
@@ -227,14 +267,28 @@ export class SigmetDraw {
     return this.firBbox;
   }
 
-  /** Subscribe to geometry changes (placement or edit). */
-  on(event: "change", cb: (r: SigmetResult) => void): void {
-    if (event === "change") this.listeners.add(cb);
+  /** Centroid of the FIR (largest polygon) — a natural centre for e.g. a tropical
+   *  cyclone circle. In the working longitude frame, like the rest of the API. */
+  firCenter(): LatLng {
+    const a = labelAnchor(this.firFeature);
+    return a ? { lon: a[0], lat: a[1] } : this.interiorPoint();
   }
 
-  /** Unsubscribe a `change` listener previously added with {@link on}. */
-  off(event: "change", cb: (r: SigmetResult) => void): void {
-    if (event === "change") this.listeners.delete(cb);
+  /** Subscribe to the full result on every placement/edit (`tac` + `geometry` + `area`). */
+  on(event: "change", cb: (r: SigmetResult) => void): void;
+  /** Subscribe to just the TAC string — the common case. */
+  on(event: "tac", cb: (tac: string) => void): void;
+  on(event: "change" | "tac", cb: ((r: SigmetResult) => void) | ((tac: string) => void)): void {
+    if (event === "tac") this.tacListeners.add(cb as (tac: string) => void);
+    else this.listeners.add(cb as (r: SigmetResult) => void);
+  }
+
+  /** Unsubscribe a listener previously added with {@link on}. */
+  off(event: "change", cb: (r: SigmetResult) => void): void;
+  off(event: "tac", cb: (tac: string) => void): void;
+  off(event: "change" | "tac", cb: ((r: SigmetResult) => void) | ((tac: string) => void)): void {
+    if (event === "tac") this.tacListeners.delete(cb as (tac: string) => void);
+    else this.listeners.delete(cb as (r: SigmetResult) => void);
   }
 
   /** Load an existing geometry (e.g. from `fromTAC`) and render it for editing. */
@@ -246,20 +300,39 @@ export class SigmetDraw {
     this.renderActive();
   }
 
+  /** Drop a circle at the current view centre (constrained inside the FIR); both
+   *  the centre and the radius are draggable (`WI nnNM OF PSN …`, 0–99). */
   circle(): void {
     this.adapter.setOverlay("guide", EMPTY);
     this.adapter.setOverlay("other", EMPTY);
     const [minLon, minLat, maxLon, maxLat] = this.firBbox;
-    let center: LatLng = {
+    let c: LatLng = {
       lat: clamp(this.center().lat, minLat, maxLat),
       lon: clamp(this.center().lon, minLon, maxLon),
     };
-    if (!this.inFir(center)) center = this.interiorPoint();
+    if (!this.inFir(c)) c = this.interiorPoint();
     const midLat = (minLat + maxLat) / 2;
     const halfWidthNM = haversineNM([minLon, midLat], [maxLon, midLat]) / 2;
-    const radius = Math.max(20, Math.round(halfWidthNM * 0.5));
+    const { unit, value: radius } = radiusFor(Math.max(20, halfWidthNM * 0.5), 99, this.nmOnly);
     this.circleBearing = 90;
-    this.active = { kind: "circle", center, radius, unit: "NM" };
+    this.active = { kind: "circle", center: c, radius, unit };
+    this.renderActive();
+  }
+
+  /**
+   * Drop a tropical-cyclone circle at the **TC centre** (required — pass the real
+   * position from the TC SIGMET's `PSN` element). The centre is fixed (not
+   * draggable); only the radius is edited, up to 999 (`WI nnnNM OF TC CENTRE`).
+   */
+  tropicalCyclone(center: LatLng): void {
+    this.adapter.setOverlay("guide", EMPTY);
+    this.adapter.setOverlay("other", EMPTY);
+    const [minLon, minLat, maxLon, maxLat] = this.firBbox;
+    const midLat = (minLat + maxLat) / 2;
+    const halfWidthNM = haversineNM([minLon, midLat], [maxLon, midLat]) / 2;
+    const { unit, value: radius } = radiusFor(Math.max(50, halfWidthNM * 0.6), 999, this.nmOnly);
+    this.circleBearing = 90;
+    this.active = { kind: "tropicalCyclone", center, radius, unit };
     this.renderActive();
   }
 
@@ -379,7 +452,7 @@ export class SigmetDraw {
     const c = this.viewInteriorPoint();
     const w = maxLon - minLon;
     // 4 points (the WID LINE max: P1 – P2 [– P3] [– P4]), initially straight;
-    // the user bends/aligns them. Default 50 KM width.
+    // the user bends/aligns them. Default ~50 km width (or 30 NM in NM-only mode).
     this.widthT = 0.5;
     this.widthSide = 1;
     const x0 = c.lon - w * 0.3;
@@ -387,8 +460,8 @@ export class SigmetDraw {
     this.active = {
       kind: "wideLine",
       points: [0, 1, 2, 3].map((i) => ({ lat: c.lat, lon: x0 + (x1 - x0) * (i / 3) })),
-      width: 50,
-      unit: "KM",
+      width: this.nmOnly ? 30 : 50,
+      unit: this.nmOnly ? "NM" : "KM",
     };
     this.renderActive();
   }
@@ -405,7 +478,9 @@ export class SigmetDraw {
 
   clear(): void {
     this.active = null;
-    for (const id of ["area", "other", "guide", "handles"] as const) {
+    this.lastResult = null;
+    this.adapter.setTooltip(null, { lat: 0, lon: 0 });
+    for (const id of ["area", "other", "guide", "handles", "label"] as const) {
       this.adapter.setOverlay(id, EMPTY);
     }
   }
@@ -416,6 +491,7 @@ export class SigmetDraw {
     if (this.destroyed) return;
     this.destroyed = true;
     this.listeners.clear();
+    this.tacListeners.clear();
     this.active = null;
     this.dragTarget = null;
     this.adapter.destroy();
@@ -438,6 +514,7 @@ export class SigmetDraw {
         return;
       }
       case "move": {
+        this.updateTooltip(ev); // hover tooltip (independent of dragging)
         if (!this.dragTarget || !a) return;
         const [minLon, minLat, maxLon, maxLat] = this.firBbox;
         const { lat, lon } = this.uw(ev.lngLat);
@@ -447,15 +524,21 @@ export class SigmetDraw {
             if (t === "center") {
               if (this.inFir({ lat, lon })) a.center = { lat, lon };
             } else if (t === "radius") {
-              // Cap at the FIR's diagonal so the circle can't span the globe and
-              // break the clip; the unit follows the geometry (NM/KM).
-              const diagNM = haversineNM([minLon, minLat], [maxLon, maxLat]);
+              // Plain circle: KM up to 99, then NM, capped at 99 (`WI nnKM/nnNM`).
               const rNM = haversineNM([a.center.lon, a.center.lat], [lon, lat]);
-              const toUnit = a.unit === "KM" ? 1.852 : 1;
-              a.radius = Math.max(
-                1,
-                Math.min(Math.round(diagNM * toUnit), Math.round(rNM * toUnit)),
-              );
+              const { unit, value } = radiusFor(rNM, 99, this.nmOnly);
+              a.unit = unit;
+              a.radius = value;
+              this.circleBearing = bearingDeg(a.center, { lat, lon });
+            }
+            break;
+          case "tropicalCyclone":
+            if (t === "radius") {
+              // TC circle: same rule, but capped at 999 (`WI nnnKM/nnnNM OF TC CENTRE`).
+              const rNM = haversineNM([a.center.lon, a.center.lat], [lon, lat]);
+              const { unit, value } = radiusFor(rNM, 999, this.nmOnly);
+              a.unit = unit;
+              a.radius = value;
               this.circleBearing = bearingDeg(a.center, { lat, lon });
             }
             break;
@@ -516,7 +599,7 @@ export class SigmetDraw {
               const cursor = { lat, lon };
               const { point: foot, t: ft } = projectFraction(cursor, a.points);
               const halfNM = haversineNM([foot.lon, foot.lat], [lon, lat]);
-              const { unit, width } = widthFor(halfNM);
+              const { unit, width } = widthFor(halfNM, this.nmOnly);
               a.unit = unit;
               a.width = width;
               // Follows the cursor: position along the line + side (both kept on edits).
@@ -825,7 +908,8 @@ export class SigmetDraw {
         lonBounds: this.lonBounds,
         clipBounded: true,
       });
-      const edge = destinationPoint(a.center, a.radius, this.circleBearing);
+      const radiusNM = a.unit === "KM" ? a.radius / 1.852 : a.radius;
+      const edge = destinationPoint(a.center, radiusNM, this.circleBearing);
       this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
       this.adapter.setOverlay("other", EMPTY);
       this.adapter.setOverlay("guide", EMPTY);
@@ -835,6 +919,30 @@ export class SigmetDraw {
           pointFeature(a.center.lon, a.center.lat, "center"),
           pointFeature(edge[0], edge[1], "radius", { control: true }),
         ]),
+      );
+      this.emit(a, area ?? EMPTY_AREA);
+      return;
+    }
+
+    if (a.kind === "tropicalCyclone") {
+      // The centre is fixed at the FIR centroid (e.g. after fromTAC, which can't
+      // carry it); only the radius is editable.
+      if (!this.inFir(a.center)) a.center = this.firCenter();
+      const area = this.areaOrNull(a, {
+        fir: this.firFeature,
+        lonBounds: this.lonBounds,
+        clipBounded: true,
+      });
+      const radiusNM = a.unit === "KM" ? a.radius / 1.852 : a.radius;
+      const edge = destinationPoint(a.center, radiusNM, this.circleBearing);
+      this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
+      this.adapter.setOverlay("other", EMPTY);
+      this.adapter.setOverlay("guide", EMPTY);
+      // No centre handle — the centre is fixed and not part of the TAC; only the
+      // radius is editable.
+      this.adapter.setOverlay(
+        "handles",
+        fc([pointFeature(edge[0], edge[1], "radius", { control: true })]),
       );
       this.emit(a, area ?? EMPTY_AREA);
       return;
@@ -863,8 +971,26 @@ export class SigmetDraw {
   ): void {
     const tac = toTAC(geometry);
     const result: SigmetResult = { geometry, tac, area };
+    this.lastResult = result;
     for (const cb of this.listeners) cb(result);
+    for (const cb of this.tacListeners) cb(tac);
     this.renderLabel(result);
+  }
+
+  /** Hover tooltip: show the configured text while the cursor is over the area. */
+  private updateTooltip(ev: PointerEvent): void {
+    const r = this.lastResult;
+    if (!this.tooltipFn || this.dragTarget || !r || r.area.geometry.type === "Point") {
+      this.adapter.setTooltip(null, ev.lngLat);
+      return;
+    }
+    const c = this.uw(ev.lngLat);
+    const inside = booleanPointInPolygon(
+      [c.lon, c.lat],
+      r.area as Feature<Polygon | MultiPolygon>,
+    );
+    const text = inside ? this.tooltipFn(r) : "";
+    this.adapter.setTooltip(text || null, ev.lngLat);
   }
 
   /** Place the dynamic text (if configured) at the shape's anchor point. */

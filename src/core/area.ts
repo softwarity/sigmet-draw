@@ -263,7 +263,8 @@ export function toArea(
       return clipBounded && firFeat ? clip(poly, firFeat) : poly;
     }
 
-    case "circle": {
+    case "circle":
+    case "tropicalCyclone": {
       const units =
         geometry.unit === "NM" ? "nauticalmiles" : "kilometers";
       const c = circle(pos(geometry.center), geometry.radius, {

@@ -90,8 +90,12 @@ describe("fromTAC", () => {
     expect(g.kind).toBe("circle");
   });
 
-  it("circle with non-explicit centre throws", () => {
-    expect(() => fromTAC("WI 250NM OF TC CENTRE")).toThrow();
+  it("'WI … OF TC CENTRE' parses as a tropical cyclone (not a plain circle)", () => {
+    expect(fromTAC("WI 250NM OF TC CENTRE").kind).toBe("tropicalCyclone");
+  });
+
+  it("circle with a non-coordinate centre still throws", () => {
+    expect(() => fromTAC("WI 250NM OF SOMEWHERE")).toThrow();
   });
 
   it("wideLine (spec A6-3), tolerant of hyphen and WIDE", () => {

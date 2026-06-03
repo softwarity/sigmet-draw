@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { collapseCollinear, collapseRing, perpDist, widthFor } from "../src/map/geometry";
+import { collapseCollinear, collapseRing, perpDist, radiusFor, widthFor } from "../src/map/geometry";
 
 describe("perpDist", () => {
   it("is zero on the line", () => {
@@ -90,5 +90,27 @@ describe("widthFor", () => {
 
   it("floors KM at 1", () => {
     expect(widthFor(0.0001)).toEqual({ unit: "KM", width: 1 });
+  });
+});
+
+describe("radiusFor", () => {
+  it("circle (cap 99): KM up to 99, then NM capped at 99", () => {
+    expect(radiusFor(20, 99)).toEqual({ unit: "KM", value: Math.round(20 * 1.852) });
+    expect(radiusFor(70, 99)).toEqual({ unit: "NM", value: 70 }); // 130 km > 99
+    expect(radiusFor(500, 99)).toEqual({ unit: "NM", value: 99 }); // capped
+  });
+
+  it("tropical cyclone (cap 999): KM up to 999, then NM capped at 999", () => {
+    expect(radiusFor(200, 999)).toEqual({ unit: "KM", value: Math.round(200 * 1.852) });
+    expect(radiusFor(600, 999)).toEqual({ unit: "NM", value: 600 }); // 1111 km > 999
+    expect(radiusFor(5000, 999)).toEqual({ unit: "NM", value: 999 }); // capped
+  });
+
+  it("nmOnly forces NM (never KM)", () => {
+    expect(radiusFor(20, 99, true)).toEqual({ unit: "NM", value: 20 });
+    expect(radiusFor(0.2, 99, true)).toEqual({ unit: "NM", value: 1 }); // floored
+    expect(radiusFor(2000, 999, true)).toEqual({ unit: "NM", value: 999 });
+    expect(widthFor(10, true)).toEqual({ unit: "NM", width: 20 });
+    expect(widthFor(0.1, true)).toEqual({ unit: "NM", width: 1 });
   });
 });

@@ -26,6 +26,7 @@ export type GeometryKind =
   | "corridor"
   | "polygon"
   | "circle"
+  | "tropicalCyclone"
   | "wideLine"
   | "entireFir";
 
@@ -108,6 +109,20 @@ export interface CircleGeometry {
   unit: DistanceUnit;
 }
 
+/**
+ * 09b — Circle around a tropical-cyclone centre: `WI 250NM OF TC CENTRE`.
+ * Unlike {@link CircleGeometry}, the centre is NOT encoded in the TAC (it lives
+ * in the TC SIGMET's separate PSN element), so `center` is for drawing only; the
+ * radius range is larger (up to 999, vs 99 for a plain circle).
+ */
+export interface TropicalCycloneGeometry {
+  kind: "tropicalCyclone";
+  /** Drawing-only centre (not serialised — the TAC says "TC CENTRE"). */
+  center: LatLng;
+  radius: number;
+  unit: DistanceUnit;
+}
+
 /** 10 — Wide line / buffer (max 3 points): `APRX 50KM WID LINE BTN p1 - p2`. */
 export interface WideLineGeometry {
   kind: "wideLine";
@@ -137,6 +152,7 @@ export type SigmetGeometry =
   | CorridorGeometry
   | PolygonGeometry
   | CircleGeometry
+  | TropicalCycloneGeometry
   | WideLineGeometry
   | EntireFirGeometry;
 

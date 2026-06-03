@@ -34,6 +34,20 @@ export interface LabelStyle {
   offsetY: number;
 }
 
+/** Floating HTML tooltip shown on hover over the geometry. */
+export interface TooltipStyle {
+  background: string;
+  color: string;
+  /** px. */
+  fontSize: number;
+  /** Any CSS padding value. */
+  padding: string;
+  /** Any CSS border-radius value. */
+  borderRadius: string;
+  /** Max width before the text wraps onto several lines (any CSS length). */
+  maxWidth: string;
+}
+
 export interface SigmetStyle {
   /** The selected zone (intersection with the FIR): fill + outline. */
   area: { fill: FillStyle; line: LineStyle };
@@ -49,6 +63,8 @@ export interface SigmetStyle {
   controlHandle: PointStyle;
   /** Dynamic text shown on the shape (e.g. the live TAC). */
   label: LabelStyle;
+  /** Floating tooltip shown on hover over the geometry. */
+  tooltip: TooltipStyle;
 }
 
 export const DEFAULT_STYLE: SigmetStyle = {
@@ -62,6 +78,14 @@ export const DEFAULT_STYLE: SigmetStyle = {
   collinearVertex: { radius: 7, color: "#8b949e", strokeColor: "#8b949e", strokeWidth: 2 },
   controlHandle: { radius: 8, color: "#58a6ff", strokeColor: "#ffffff", strokeWidth: 2 },
   label: { color: "#ffffff", size: 13, haloColor: "#0b1622", haloWidth: 2, offsetY: -14 },
+  tooltip: {
+    background: "#0b1622",
+    color: "#e6edf3",
+    fontSize: 12,
+    padding: "3px 7px",
+    borderRadius: "4px",
+    maxWidth: "260px",
+  },
 };
 
 /** A partial, deeply-optional override of {@link SigmetStyle}. */
@@ -73,6 +97,7 @@ export interface SigmetStyleInput {
   collinearVertex?: Partial<PointStyle>;
   controlHandle?: Partial<PointStyle>;
   label?: Partial<LabelStyle>;
+  tooltip?: Partial<TooltipStyle>;
 }
 
 /** Merge a line style, cloning the `dash` array so it isn't shared with the caller. */
@@ -95,6 +120,7 @@ export function mergeStyle(base: SigmetStyle, override?: SigmetStyleInput): Sigm
     collinearVertex: { ...base.collinearVertex, ...override.collinearVertex },
     controlHandle: { ...base.controlHandle, ...override.controlHandle },
     label: { ...base.label, ...override.label },
+    tooltip: { ...base.tooltip, ...override.tooltip },
   };
 }
 

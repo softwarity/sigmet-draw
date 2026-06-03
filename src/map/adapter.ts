@@ -33,6 +33,46 @@ export interface PointerEvent {
   hit?: { overlay: OverlayId; props: Record<string, unknown> };
 }
 
+/**
+ * Where the turnkey toolbar sits over the map. The first token is the anchored
+ * edge (which also implies the bar's orientation — top/bottom ⇒ horizontal,
+ * left/right ⇒ vertical); a bare edge is centred along it.
+ */
+export type ToolbarPosition =
+  | "top"
+  | "top-left"
+  | "top-right"
+  | "bottom"
+  | "bottom-left"
+  | "bottom-right"
+  | "left"
+  | "left-top"
+  | "left-bottom"
+  | "right"
+  | "right-top"
+  | "right-bottom";
+
+/** Offset from the map edges: one CSS length for the anchored edge(s), or a
+ *  per-side object (e.g. `{ top: "12px", left: "8px" }` for a `top-left` bar). */
+export type ToolbarPadding =
+  | string
+  | { top?: string; right?: string; bottom?: string; left?: string };
+
+/** Layout customisation for the turnkey toolbar. Colours/box come from the host
+ *  engine's native control style; these tune placement and flow. */
+export interface ToolbarOptions {
+  /** Default `"top-left"`. `"top"`/`"bottom"` are horizontally centred. */
+  position?: ToolbarPosition;
+  /** Button flow. Default `"horizontal"`. */
+  orientation?: "horizontal" | "vertical";
+  /** Offset from the map edge(s): a CSS length, or per-side. Default `"10px"`. */
+  padding?: ToolbarPadding;
+  /** Gap between buttons (any CSS length). Default: the engine's native spacing. */
+  gap?: string;
+  /** Extra class(es) added to the toolbar container for further CSS styling. */
+  className?: string;
+}
+
 /** A tool button rendered in the host engine's *native* control style. */
 export interface ToolbarItem {
   id: string;
@@ -52,8 +92,11 @@ export interface MapAdapter {
   setOverlay(id: OverlayId, data: FeatureCollection): void;
   /** Apply a fully-resolved style to the overlays (called by `SigmetDraw`). */
   setStyle(style: SigmetStyle): void;
-  /** Optional helper: render a tool toolbar as a native map control. */
-  addToolbar(items: ToolbarItem[]): void;
+  /** Show a floating tooltip at `at` (lon/lat), or hide it when `text` is null. */
+  setTooltip(text: string | null, at: LatLng): void;
+  /** Optional helper: render a tool toolbar as a native map control; returns the
+   *  container element (so a controller can mutate it live). */
+  addToolbar(items: ToolbarItem[], options?: ToolbarOptions): HTMLElement;
   getCenter(): LatLng;
   setPanEnabled(enabled: boolean): void;
   setCursor(cursor: string): void;

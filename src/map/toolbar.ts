@@ -1,13 +1,73 @@
 /**
  * Build the SIGMET tool toolbar inside an engine-provided container element
- * (MapLibre `ctrl-group` / OpenLayers `ol-control`). Adds a collapse toggle and
- * active-state handling; styling (orientation, colours) is the host's CSS via the
- * `.sigmet-toolbar` class.
+ * (MapLibre `ctrl-group` / OpenLayers `ol-control`), so the buttons inherit the
+ * host engine's **native control look**. Placement/flow are tuned via
+ * {@link ToolbarOptions}; deeper styling is the host's CSS (`.sigmet-toolbar`).
  */
-import type { ToolbarItem } from "./adapter.js";
+import type { ToolbarItem, ToolbarOptions } from "./adapter.js";
 
-export function populateToolbar(el: HTMLElement, items: ToolbarItem[]): void {
+const STYLE_ID = "sigmet-draw-toolbar-style";
+
+/** Inject (once) the minimal CSS that makes the SVG icons show on native buttons. */
+function ensureToolbarStyle(): void {
+  if (typeof document === "undefined" || document.getElementById(STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = STYLE_ID;
+  style.textContent =
+    ".sigmet-toolbar button svg{display:block;margin:auto}" +
+    // Icons use currentColor; default to a dark tone visible on the (light) native
+    // control buttons. Host CSS on `.sigmet-toolbar button` overrides this.
+    ".sigmet-toolbar button{color:#24292f}" +
+    // A disabled tool (e.g. the TC button with no centre) looks clearly greyed-out.
+    ".sigmet-toolbar button:disabled{opacity:.28;filter:grayscale(1);cursor:not-allowed}";
+  document.head.appendChild(style);
+}
+
+/** Apply placement/flow from {@link ToolbarOptions} as inline styles. */
+export function applyToolbarLayout(el: HTMLElement, opts?: ToolbarOptions): void {
+  const pad = opts?.padding ?? "10px";
+  const side = (s: "top" | "right" | "bottom" | "left"): string =>
+    typeof pad === "string" ? pad : (pad[s] ?? "10px");
+  const pos = opts?.position ?? "top-left";
+  const [edge, sec] = pos.split("-"); // edge = top|bottom|left|right; sec = cross anchor
+  const horizontal = edge === "top" || edge === "bottom"; // bar runs along this axis
+  // Reset every inset explicitly (auto unless set) so host CSS can't leak in.
+  el.style.position = "absolute";
+  el.style.zIndex = "3";
+  el.style.top = el.style.bottom = el.style.left = el.style.right = "auto";
+  el.style.transform = "none";
+  // Primary (anchored) edge always gets its offset.
+  if (edge === "top") el.style.top = side("top");
+  else if (edge === "bottom") el.style.bottom = side("bottom");
+  else if (edge === "left") el.style.left = side("left");
+  else el.style.right = side("right");
+  // Cross axis: corner anchor, or centred along the edge.
+  if (horizontal) {
+    if (sec === "left") el.style.left = side("left");
+    else if (sec === "right") el.style.right = side("right");
+    else (el.style.left = "50%"), (el.style.transform = "translateX(-50%)");
+  } else {
+    if (sec === "top") el.style.top = side("top");
+    else if (sec === "bottom") el.style.bottom = side("bottom");
+    else (el.style.top = "50%"), (el.style.transform = "translateY(-50%)");
+  }
+  el.style.display = "flex";
+  el.style.flexWrap = "nowrap";
+  // Orientation follows the edge (top/bottom ⇒ row, left/right ⇒ column) unless set.
+  const vertical = opts?.orientation === "vertical" || (opts?.orientation == null && !horizontal);
+  el.style.flexDirection = vertical ? "column" : "row";
+  el.style.gap = opts?.gap ?? "";
+  if (opts?.className) el.classList.add(...opts.className.split(/\s+/).filter(Boolean));
+}
+
+export function populateToolbar(
+  el: HTMLElement,
+  items: ToolbarItem[],
+  options?: ToolbarOptions,
+): void {
   el.classList.add("sigmet-toolbar");
+  ensureToolbarStyle();
+  applyToolbarLayout(el, options);
 
   const setActive = (btn: HTMLButtonElement) => {
     el.querySelectorAll("button.active").forEach((b) => b.classList.remove("active"));
@@ -17,6 +77,7 @@ export function populateToolbar(el: HTMLElement, items: ToolbarItem[]): void {
   for (const item of items) {
     const button = document.createElement("button");
     button.type = "button";
+    button.dataset.tool = item.id; // lets a controller find/disable a specific tool
     button.title = item.title;
     button.setAttribute("aria-label", item.title);
     if (item.svg) button.innerHTML = item.svg;

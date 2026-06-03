@@ -50,10 +50,9 @@
 .stage {
   display: flex;
   flex-direction: row;
-  height: 520px;
+  height: 700px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  overflow: hidden;
 }
 
 .stage-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -61,14 +60,21 @@
 .stage-style {
   width: 480px;
   flex-shrink: 0;
-  overflow: auto;
+  //overflow: auto; // SINGLE scroll area — both H and V scrollbars live here
   background: var(--bg-primary);
-  border-left: 1px solid var(--border-color);
-  padding: 12px 14px;
+}
+.stage-style interactive-code {
+  // Size to content (≥ panel width) so the component's own horizontal scroll
+  // never triggers — the panel above owns both scrollbars together.
+  display: flex;
+  min-width: 100%;
+  height: 100%;
+  margin: 0;
+  font-size: 12px;
+  overflow: auto;
 }
 .style-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
 .style-hint { color: var(--text-muted); font-size: 12px; margin: 0 0 10px; }
-.stage-style interactive-code { margin: 0; font-size: 12px; }
 
 .map { flex: 1; min-height: 0; position: relative; }
 
@@ -96,6 +102,24 @@
 }
 
 .hint { color: var(--text-muted); font-size: 13px; margin: 10px 0 0; }
+
+.ref {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  font-size: 13px;
+
+  th, td {
+    border: 1px solid var(--border-color);
+    padding: 7px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--bg-secondary); color: var(--text-primary); font-weight: 600; }
+  td { color: var(--text-secondary); }
+  td:first-child { white-space: nowrap; }
+  code { background: none; color: var(--accent-blue); font-size: 12px; padding: 0; }
+}
 .muted { color: var(--text-muted); font-size: 13px; margin: 0 0 12px; }
 h2.api { margin-top: 32px; }
 
@@ -104,6 +128,8 @@ h2.api { margin-top: 32px; }
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 8px;
 }
+
+.method.wide { grid-column: span 2; } // e.g. tropicalCyclone(center) — longer label
 
 .method {
   display: flex;

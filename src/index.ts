@@ -15,6 +15,12 @@ export * from "./core/index.js";
 export { SigmetDraw } from "./map/sigmet-draw.js";
 export type { SigmetDrawOptions, SigmetResult, LabelFn } from "./map/sigmet-draw.js";
 
+export { DEFAULT_TOOLS, TOOL_ICONS } from "./map/tools.js";
+export type { ToolName, ToolSpec } from "./map/tools.js";
+
+export { SigmetToolbar } from "./map/toolbar-controller.js";
+export type { ToolbarConfig } from "./map/toolbar-controller.js";
+
 export { DEFAULT_STYLE, mergeStyle, rgba } from "./map/style.js";
 export type {
   SigmetStyle,
@@ -23,6 +29,7 @@ export type {
   LineStyle,
   PointStyle,
   LabelStyle,
+  TooltipStyle,
 } from "./map/style.js";
 
 export type {
@@ -31,6 +38,9 @@ export type {
   PointerEvent,
   Projection,
   ToolbarItem,
+  ToolbarOptions,
+  ToolbarPadding,
+  ToolbarPosition,
 } from "./map/adapter.js";
 
 export { MapLibreAdapter, createMapLibreMap } from "./map/maplibre-adapter.js";

@@ -27,7 +27,7 @@
       <div #map class="map"></div>
     </div>
     <aside class="stage-style" (change)="onPanelChange($event)">
-      <interactive-code language="typescript">
+      <interactive-code language="typescript" show-copy>
         <textarea>import { SigmetDraw, ${adapter} } from "@softwarity/sigmet-draw";
 ${mapImport}
 
@@ -36,7 +36,14 @@ const map = new Map({ /* your basemap, controls, projection */ });
 const sigmet = new SigmetDraw({
   adapter: new ${adapter}({ map }),
   fir,
+${tbOff}  toolbar: {                       // turnkey native toolbar (comment out → none)
+    position: "${tbPosition}",</textarea>
+        <textarea condition="tbCentered">    padding: { ${tbEdge1}: "${tbPad1}px" },</textarea>
+        <textarea condition="!tbCentered">    padding: { ${tbEdge1}: "${tbPad1}px", ${tbEdge2}: "${tbPad2}px" },</textarea>
+        <textarea>  },${/tbOff}
 ${labelFn}  label: (r) => r.tac,
+${tooltipFn}  tooltip: (r) => r.tac,   // floating tooltip on hover over the geometry
+  nauticalMilesOnly: ${nmOnly},
   style: {
 ${area}    area: { fill: { color: "${areaColor}", opacity: ${areaOpacity} },
 ${area}      line: { color: "${areaLineColor}", width: ${areaLineWidth} } },
@@ -45,11 +52,25 @@ ${vertex}    vertex: { color: "${vertexColor}" },
 ${collinear}    collinearVertex: { color: "${collinearColor}" },
 ${control}    controlHandle: { color: "${controlColor}" },
 ${label}    label: { color: "${labelColor}", size: ${labelSize} },
+${tooltip}    tooltip: { color: "${tipColor}", background: "${tipBg}", maxWidth: "${tipW}px" },
   },
-});</textarea>
+});
+
+// comment the next line out → the tropical-cyclone button greys out:
+${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
         <code-binding key="adapter" type="select" options="MapLibreAdapter,OpenLayersAdapter" [value]="adapterName()"></code-binding>
         <code-binding key="mapImport" type="readonly" [value]="mapImport()"></code-binding>
+        <code-binding key="tbOff" type="comment" value="true"></code-binding>
+        <code-binding key="tcEnabled" type="comment" value="true"></code-binding>
+        <code-binding key="tbPosition" type="select" options="top,top-left,top-right,bottom,bottom-left,bottom-right,left,left-top,left-bottom,right,right-top,right-bottom" value="top-left" carousel></code-binding>
+        <code-binding key="tbCentered" type="boolean" [value]="tbCentered()"></code-binding>
+        <code-binding key="tbEdge1" type="readonly" [value]="tbEdge1()"></code-binding>
+        <code-binding key="tbEdge2" type="readonly" [value]="tbEdge2()"></code-binding>
+        <code-binding key="tbPad1" type="number" value="10" min="0" max="60" step="2"></code-binding>
+        <code-binding key="tbPad2" type="number" value="10" min="0" max="60" step="2"></code-binding>
         <code-binding key="labelFn" type="comment" value="true"></code-binding>
+        <code-binding key="tooltipFn" type="comment" value="false"></code-binding>
+        <code-binding key="nmOnly" type="boolean" value="false"></code-binding>
         <code-binding key="area" type="comment" value="true"></code-binding>
         <code-binding key="areaColor" type="color" value="#f0883e"></code-binding>
         <code-binding key="areaOpacity" type="number" value="0.35" min="0" max="1" step="0.05"></code-binding>
@@ -67,35 +88,33 @@ ${label}    label: { color: "${labelColor}", size: ${labelSize} },
         <code-binding key="label" type="comment" value="true"></code-binding>
         <code-binding key="labelColor" type="color" value="#ffffff"></code-binding>
         <code-binding key="labelSize" type="number" value="13" min="8" max="24" step="1"></code-binding>
+        <code-binding key="tooltip" type="comment" value="true"></code-binding>
+        <code-binding key="tipColor" type="color" value="#e6edf3"></code-binding>
+        <code-binding key="tipBg" type="color" value="#0b1622"></code-binding>
+        <code-binding key="tipW" type="number" value="260" min="120" max="400" step="20"></code-binding>
       </interactive-code>
     </aside>
   </div>
   <div class="tac">{{ tac() }}</div>
   <p class="hint">
-    The toolbar is the engine's <strong>native control</strong> (top-right), with SVG icons —
-    MapLibre vs OpenLayers styling. Select a tool: a default shape is dropped, then drag the handles.
+    The toolbar is the engine's <strong>native control</strong>, with SVG icons (MapLibre vs
+    OpenLayers styling). Select a tool: a default shape is dropped, then drag the handles.
   </p>
 
   <h2 class="api">Every tool is a function call</h2>
   <p class="muted">
-    Each button calls the matching method on the live map. Wire your own buttons, and listen for
-    <code>change</code> to get the TAC, the parametric geometry and the GeoJSON area.
+    Each button calls the matching method on the live map (watch it draw above). Wire your own
+    buttons, and listen for <code>change</code> to get the TAC, geometry and GeoJSON area.
   </p>
   <div class="methods">
     @for (t of tools; track t.method) {
-      <button class="method" (click)="runTool(t.method)" [title]="t.desc">
+      <button class="method" [class.wide]="t.method === 'tropicalCyclone'"
+        (click)="runTool(t.method)" [title]="t.desc">
         <span class="ic" [innerHTML]="icon(t.method)"></span>
-        <code>sigmet.{{ t.method }}()</code>
+        <code>{{ t.call ?? "s." + t.method + "()" }}</code>
       </button>
     }
   </div>
-  <interactive-code language="typescript">
-    <textarea>circleBtn.onclick = () => sigmet.circle();   // wire your own buttons
-
-sigmet.on("change", ({ tac, geometry, area }) => {
-  console.log(tac);   // ICAO text, the parametric geometry, and the clipped GeoJSON
-});</textarea>
-  </interactive-code>
 
   <h2 class="api">Load a TAC — <code>fromTAC</code> → <code>load</code></h2>
   <p class="muted">Draw a shape above (the field fills with its TAC), edit it, then draw it back.</p>
@@ -111,26 +130,75 @@ sigmet.on("change", ({ tac, geometry, area }) => {
   @if (tacError()) {
     <p class="err">⚠ {{ tacError() }}</p>
   }
-  <interactive-code language="typescript">
-    <textarea>import { fromTAC } from "@softwarity/sigmet-draw/core";
 
-const geometry = fromTAC("${tac}");
-sigmet.load(geometry);   // renders it for editing</textarea>
-    <code-binding key="tac" type="readonly" [value]="tacInput()"></code-binding>
-  </interactive-code>
+  <h2 class="api">All options — <code>new SigmetDraw(options)</code></h2>
+  <table class="ref">
+    <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>adapter</code></td><td><code>MapAdapter</code></td><td>—</td><td><strong>Required.</strong> Wraps your map — <code>new MapLibreAdapter(&#123; map &#125;)</code> or <code>new OpenLayersAdapter(&#123; map &#125;)</code>.</td></tr>
+      <tr><td><code>fir</code></td><td><code>Feature | Polygon | MultiPolygon</code></td><td>—</td><td><strong>Required.</strong> FIR polygon — used for clipping, the centre-inside-FIR constraint and line-endpoint snapping.</td></tr>
+      <tr><td><code>label</code></td><td><code>(r) =&gt; string</code></td><td>—</td><td>Dynamic text drawn <em>on</em> the shape (return <code>""</code> to hide).</td></tr>
+      <tr><td><code>tooltip</code></td><td><code>(r) =&gt; string</code></td><td>—</td><td>Floating text shown <em>on hover</em> over the geometry.</td></tr>
+      <tr><td><code>nauticalMilesOnly</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Force radii/widths to NM (never emit KM).</td></tr>
+      <tr><td><code>toolbar</code></td><td><code>boolean | ToolbarConfig</code></td><td>—</td><td>Render the turnkey native toolbar (see below). Omit for none.</td></tr>
+      <tr><td><code>style</code></td><td><code>SigmetStyleInput</code></td><td><code>DEFAULT_STYLE</code></td><td>Partial style override, merged onto the defaults.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="api">Events &amp; methods</h2>
+  <table class="ref">
+    <thead><tr><th>Member</th><th>Signature</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>on("tac")</code></td><td><code>(tac: string) =&gt; void</code></td><td>Fires the TAC string on every placement/edit — <strong>the common case</strong>.</td></tr>
+      <tr><td><code>on("change")</code></td><td><code>(r: &#123; geometry, tac, area &#125;) =&gt; void</code></td><td>Same, with the full result (parametric geometry + clipped GeoJSON area).</td></tr>
+      <tr><td><code>off(event, cb)</code></td><td>—</td><td>Unsubscribe a listener.</td></tr>
+      <tr><td>tools</td><td><code>circle() · tropicalCyclone(center) · meridian() · parallel() · latBand() · lonBand() · quadrant() · lineSide() · corridor() · polygon() · wideLine() · point() · entireFir()</code></td><td>Drop a default shape of that kind (then drag handles).</td></tr>
+      <tr><td><code>clear()</code> / <code>load(geometry)</code></td><td>—</td><td>Remove the drawing / render an existing geometry (e.g. from <code>fromTAC</code>).</td></tr>
+      <tr><td><code>setFir(fir)</code></td><td>—</td><td>Swap the FIR without recreating the map (clears the drawing).</td></tr>
+      <tr><td><code>firBounds()</code> / <code>firCenter()</code></td><td><code>[minLon,minLat,maxLon,maxLat]</code> / <code>LatLng</code></td><td>FIR bbox / centroid (e.g. to fit the map, or as a TC centre).</td></tr>
+      <tr><td><code>setStyle(partial)</code></td><td>—</td><td>Restyle live (merged onto the current style).</td></tr>
+      <tr><td><code>setLabel(fn|null)</code> / <code>setTooltip(fn|null)</code></td><td>—</td><td>Change/clear the on-shape label / hover tooltip live.</td></tr>
+      <tr><td><code>ready()</code> / <code>destroy()</code></td><td><code>Promise</code> / —</td><td>Resolves once grafted / detaches (leaves the host map intact).</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="api">Style tokens — <code>style</code> / <code>setStyle</code></h2>
+  <table class="ref">
+    <thead><tr><th>Token</th><th>Fields</th><th>What it styles</th></tr></thead>
+    <tbody>
+      <tr><td><code>area.fill</code> / <code>area.line</code></td><td><code>color, opacity</code> / <code>color, width, dash?</code></td><td>The selected zone (∩ FIR): fill + outline (the curve for circle/buffer).</td></tr>
+      <tr><td><code>other.fill</code></td><td><code>color, opacity</code></td><td>Faint preview of the opposite side (line-side / quadrant pick).</td></tr>
+      <tr><td><code>guide</code></td><td><code>color, width, dash?</code></td><td>Construction segments &amp; curves (line/corridor, buffer centreline).</td></tr>
+      <tr><td><code>vertex</code> / <code>collinearVertex</code> / <code>controlHandle</code></td><td><code>radius, color, strokeColor, strokeWidth</code></td><td>Points kept in the TAC / aligned points (ignored) / radius &amp; width handle.</td></tr>
+      <tr><td><code>label</code></td><td><code>color, size, haloColor, haloWidth, offsetY</code></td><td>On-shape text.</td></tr>
+      <tr><td><code>tooltip</code></td><td><code>background, color, fontSize, padding, borderRadius, maxWidth</code></td><td>Hover tooltip box.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="api">Toolbar — <code>toolbar</code> option &amp; <code>sigmet.toolbar</code></h2>
+  <table class="ref">
+    <thead><tr><th>Field</th><th>Type</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>position</code></td><td><code>top · top-left · top-right · bottom · bottom-left · bottom-right · left · left-top · left-bottom · right · right-top · right-bottom</code></td><td>Anchored edge (sets orientation: top/bottom ⇒ horizontal, left/right ⇒ vertical); a bare edge is centred. <em>Live.</em></td></tr>
+      <tr><td><code>padding</code></td><td><code>string | &#123; top?, right?, bottom?, left? &#125;</code></td><td>Offset from the anchored edge(s) — a CSS length or per-side. <em>Live.</em></td></tr>
+      <tr><td><code>gap</code> / <code>orientation</code></td><td><code>string</code> / <code>"horizontal" | "vertical"</code></td><td>Space between buttons / override the implied orientation. <em>Live.</em></td></tr>
+      <tr><td><code>tcCenter</code></td><td><code>LatLng | null</code></td><td>Centre for the tropical-cyclone tool — the button is greyed until set. <em>Live.</em></td></tr>
+      <tr><td><code>tools</code> / <code>clear</code> / <code>className</code></td><td><code>ToolName[]</code> / <code>boolean</code> / <code>string</code></td><td>Pick/order the tools / include the clear button / extra CSS class (config-time).</td></tr>
+    </tbody>
+  </table>
 
   <h2 class="api">Change the style at runtime</h2>
   <p class="muted">
     Less common, but you can restyle after grafting — only what you pass is overridden,
     the rest keeps its current value.
   </p>
-  <interactive-code language="typescript">
+  <interactive-code language="typescript" show-copy>
     <textarea>sigmet.setStyle({ area: { fill: { opacity: 0.5 } } });
 sigmet.setLabel((r) => r.geometry.kind);   // or change the dynamic text</textarea>
   </interactive-code>
 
   <h2 class="api">Core only (no map)</h2>
-  <interactive-code language="typescript">
+  <interactive-code language="typescript" show-copy>
     <textarea>import { toTAC, fromTAC, toArea } from "@softwarity/sigmet-draw/core";
 
 const g = fromTAC("WI 250NM OF PSN N2706 W07306");

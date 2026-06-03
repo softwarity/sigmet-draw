@@ -18,6 +18,8 @@ export const ICONS: Record<string, string> = {
   ),
   polygon: wrap('<polygon points="12,3 21,10 17,21 7,21 3,10"/>'),
   point: wrap('<circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/>'),
+  // Tornado / tropical-cyclone funnel: stacked narrowing lines + a tail.
+  tropicalCyclone: wrap('<path d="M4 5h16M6 9h12M9 13h7M12 17h2"/><path d="M13 17q1 3-1 4"/>'),
   entireFir: wrap('<rect x="3" y="4" width="18" height="16" rx="4"/>'),
   clear: wrap('<path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/>'),
   globe: wrap('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/>'),

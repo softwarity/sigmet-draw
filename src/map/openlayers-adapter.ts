@@ -28,10 +28,12 @@ import type {
   OverlayId,
   PointerEvent,
   ToolbarItem,
+  ToolbarOptions,
 } from "./adapter.js";
 import { DEFAULT_STYLE, rgba } from "./style.js";
 import type { PointStyle, SigmetStyle } from "./style.js";
 import { populateToolbar } from "./toolbar.js";
+import { applyTooltipStyle } from "./tooltip.js";
 
 const OVERLAY_IDS: OverlayId[] = ["other", "area", "guide", "handles", "label"];
 
@@ -107,6 +109,7 @@ export class OpenLayersAdapter implements MapAdapter {
   private domPointerUp: ((e: globalThis.PointerEvent) => void) | undefined;
   private viewportPointerDown: ((e: globalThis.PointerEvent) => void) | undefined;
   private toolbarEl: HTMLElement | undefined;
+  private tooltipEl: HTMLElement | undefined;
   /** True between pointer down and up — used to skip hit-testing during a drag. */
   private dragging = false;
 
@@ -120,6 +123,26 @@ export class OpenLayersAdapter implements MapAdapter {
     for (const id of OVERLAY_IDS) {
       this.layers[id]?.setStyle(olStyleFor(id, style));
     }
+    if (this.tooltipEl) applyTooltipStyle(this.tooltipEl, style.tooltip);
+  }
+
+  setTooltip(text: string | null, at: LatLng): void {
+    if (text == null) {
+      if (this.tooltipEl) this.tooltipEl.style.display = "none";
+      return;
+    }
+    if (!this.tooltipEl) {
+      this.tooltipEl = document.createElement("div");
+      this.tooltipEl.className = "sigmet-tooltip";
+      applyTooltipStyle(this.tooltipEl, this.style.tooltip);
+      this.map.getTargetElement()?.appendChild(this.tooltipEl);
+    }
+    const px = this.map.getPixelFromCoordinate(fromLonLat([at.lon, at.lat]));
+    if (!px) return;
+    this.tooltipEl.textContent = text;
+    this.tooltipEl.style.display = "block";
+    this.tooltipEl.style.left = `${px[0]}px`;
+    this.tooltipEl.style.top = `${px[1]}px`;
   }
 
   ready(): Promise<void> {
@@ -154,15 +177,16 @@ export class OpenLayersAdapter implements MapAdapter {
     }
   }
 
-  addToolbar(items: ToolbarItem[]): void {
-    if (this.toolbarEl) return; // idempotent
-    // Attached to the map target (not via addControl) so the host positions it
-    // freely (top-centre) without colliding with zoom/attribution controls.
+  addToolbar(items: ToolbarItem[], options?: ToolbarOptions): HTMLElement {
+    if (this.toolbarEl) return this.toolbarEl; // idempotent
+    // Use OpenLayers' native control class so the buttons inherit the engine's
+    // native look; placement is set by populateToolbar from `options`.
     const el = document.createElement("div");
     el.className = "ol-control sigmet-toolbar";
-    populateToolbar(el, items);
+    populateToolbar(el, items, options);
     this.map.getTargetElement()?.appendChild(el);
     this.toolbarEl = el;
+    return el;
   }
 
   getCenter(): LatLng {
@@ -235,6 +259,8 @@ export class OpenLayersAdapter implements MapAdapter {
     }
     this.toolbarEl?.remove();
     this.toolbarEl = undefined;
+    this.tooltipEl?.remove();
+    this.tooltipEl = undefined;
     this.readyPromise = undefined;
     this.dragPan?.setActive(true);
     this.setCursor("");
