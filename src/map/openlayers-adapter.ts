@@ -275,16 +275,10 @@ export class OpenLayersAdapter implements MapAdapter {
       (feature: FeatureLike, layer: unknown) => {
         const overlay = this.layerOverlay.get(layer);
         if (overlay === "handles" || overlay === "guide" || overlay === "other") {
-          // Mirror MapLibre: expose the full feature property bag (role + control
-          // + collinear + …), not just role.
-          result = {
-            overlay,
-            props: {
-              role: feature.get("role"),
-              control: feature.get("control"),
-              collinear: feature.get("collinear"),
-            },
-          };
+          // Mirror MapLibre: expose the full feature property bag, not just role.
+          const props = { ...feature.getProperties() };
+          delete props["geometry"];
+          result = { overlay, props };
           return true;
         }
         return false;

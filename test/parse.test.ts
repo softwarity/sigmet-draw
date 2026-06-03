@@ -41,6 +41,13 @@ describe("fromTAC", () => {
     expect(fromTAC("S OF N54 AND N OF S50")).toEqual(expected);
   });
 
+  it("latBand sorts reversed-but-legal bounds (never south > north)", () => {
+    // "N OF N54 AND S OF N50" would give south=54, north=50 if taken literally.
+    const g = fromTAC("N OF N54 AND S OF N50") as { south: number; north: number };
+    expect(g.south).toBe(50);
+    expect(g.north).toBe(54);
+  });
+
   it("lonBand", () => {
     expect(fromTAC("E OF W012 AND W OF E005")).toEqual({
       kind: "lonBand",

@@ -44,4 +44,15 @@ describe("mergeStyle", () => {
     mergeStyle(DEFAULT_STYLE, { label: { size: 99 }, area: { fill: { opacity: 0.9 } } });
     expect(JSON.stringify(DEFAULT_STYLE)).toBe(before);
   });
+
+  it("deep-merges a partial tooltip override, keeping siblings", () => {
+    const s = mergeStyle(DEFAULT_STYLE, { tooltip: { fontSize: 20 } });
+    expect(s.tooltip.fontSize).toBe(20);
+    expect(s.tooltip.background).toBe(DEFAULT_STYLE.tooltip.background);
+    expect(s.tooltip.maxWidth).toBe(DEFAULT_STYLE.tooltip.maxWidth);
+  });
+
+  it("keeps the default tooltip when no override is given", () => {
+    expect(mergeStyle(DEFAULT_STYLE).tooltip).toEqual(DEFAULT_STYLE.tooltip);
+  });
 });

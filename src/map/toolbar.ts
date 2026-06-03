@@ -8,7 +8,15 @@ import type { ToolbarItem, ToolbarOptions } from "./adapter.js";
 
 const STYLE_ID = "sigmet-draw-toolbar-style";
 
-/** Inject (once) the minimal CSS that makes the SVG icons show on native buttons. */
+/**
+ * Inject (once) the minimal CSS that makes the SVG icons show on native buttons.
+ *
+ * This appends a single `<style id="sigmet-draw-toolbar-style">` to `document.head`.
+ * It is process-global and intentionally NOT removed on `destroy()`: the node is
+ * shared across every toolbar/instance, so one instance's teardown must not pull it
+ * from under the others. The cost is one tiny, idempotent (id-guarded) style node
+ * for the document lifetime. SSR-safe via the `typeof document` guard.
+ */
 function ensureToolbarStyle(): void {
   if (typeof document === "undefined" || document.getElementById(STYLE_ID)) return;
   const style = document.createElement("style");

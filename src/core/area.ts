@@ -155,9 +155,21 @@ function truncateFeature(f: AreaFeature, precision = 7): AreaFeature {
   return { type: "Feature", properties: f.properties ?? {}, geometry };
 }
 
+/** JSTS can return a valid-but-empty geometry (no rings) instead of null. */
+function isEmptyArea(f: AreaFeature | null): boolean {
+  if (!f) return true;
+  const g = f.geometry;
+  if (g.type === "Polygon") return g.coordinates.length === 0;
+  if (g.type === "MultiPolygon") return g.coordinates.length === 0;
+  return false;
+}
+
 function clip(area: AreaFeature, fir: Feature<Polygon | MultiPolygon>): AreaFeature {
-  const run = (a: AreaFeature, b: AreaFeature): AreaFeature | null =>
-    intersect(featureCollection([a, b]) as never) as AreaFeature | null;
+  const run = (a: AreaFeature, b: AreaFeature): AreaFeature | null => {
+    const out = intersect(featureCollection([a, b]) as never) as AreaFeature | null;
+    // Normalise an empty result to null so it's treated as a genuine no-overlap.
+    return isEmptyArea(out) ? null : out;
+  };
   // 1) Direct. A clean `null` here is a genuine no-overlap — don't retry.
   try {
     const direct = run(area, fir);
@@ -189,7 +201,15 @@ function clip(area: AreaFeature, fir: Feature<Polygon | MultiPolygon>): AreaFeat
   }
 }
 
-/** Compute the displayable area for a geometry. Points return a Point feature. */
+/**
+ * Compute the displayable area for a geometry. Points return a Point feature.
+ *
+ * Note: a `tropicalCyclone` geometry decoded from TAC carries a placeholder
+ * `center` of `{ lat: 0, lon: 0 }` (the centre is not encoded in the text). The
+ * caller MUST set a real `center` before calling `toArea`, otherwise the circle
+ * is drawn off the coast of West Africa. The map controller resolves this from
+ * the FIR automatically; pure-core callers are responsible for it themselves.
+ */
 export function toArea(
   geometry: SigmetGeometry,
   options: AreaOptions = {},

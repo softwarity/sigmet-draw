@@ -75,6 +75,8 @@ export interface ToolbarOptions {
 
 /** A tool button rendered in the host engine's *native* control style. */
 export interface ToolbarItem {
+  /** Written to the button's `data-tool` attribute. For built-in tools this MUST
+   *  be the `ToolName` so the controller can target it (e.g. grey the TC button). */
   id: string;
   title: string;
   /** Short text/glyph fallback shown when no `svg` is given. */
@@ -99,7 +101,6 @@ export interface MapAdapter {
   addToolbar(items: ToolbarItem[], options?: ToolbarOptions): HTMLElement;
   getCenter(): LatLng;
   setPanEnabled(enabled: boolean): void;
-  setCursor(cursor: string): void;
   onPointer(cb: (ev: PointerEvent) => void): void;
   /**
    * Detach everything this adapter added (overlays, pointer listeners, toolbar)

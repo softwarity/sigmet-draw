@@ -88,6 +88,7 @@ export class MapLibreAdapter implements MapAdapter {
   private style: SigmetStyle = DEFAULT_STYLE;
   /** Captured pointer handlers, kept so `destroy()` can detach them. */
   private pointerHandlers: PointerHandlers | undefined;
+  private windowUp: ((e: MouseEvent) => void) | undefined;
   private toolbarEl: HTMLElement | undefined;
   private tooltipEl: HTMLElement | undefined;
   /** True between pointer down and up — used to skip hit-testing during a drag. */
@@ -204,6 +205,17 @@ export class MapLibreAdapter implements MapAdapter {
     this.map.on("mouseup", handlers.mouseup);
     this.map.on("click", handlers.click);
     this.pointerHandlers = handlers;
+    // A mouseup outside the canvas (drag released past the map edge) never reaches
+    // the map's "mouseup" — finish the drag here so pan isn't left disabled.
+    if (typeof window !== "undefined") {
+      const windowUp = (): void => {
+        if (!this.dragging) return; // the in-canvas mouseup already handled it
+        this.dragging = false;
+        cb({ type: "up", lngLat: { lat: 0, lon: 0 } });
+      };
+      window.addEventListener("mouseup", windowUp);
+      this.windowUp = windowUp;
+    }
   }
 
   /** Detach everything this adapter added; never destroys the host map. */
@@ -215,6 +227,10 @@ export class MapLibreAdapter implements MapAdapter {
       this.map.off("mouseup", h.mouseup);
       this.map.off("click", h.click);
       this.pointerHandlers = undefined;
+    }
+    if (this.windowUp && typeof window !== "undefined") {
+      window.removeEventListener("mouseup", this.windowUp);
+      this.windowUp = undefined;
     }
     for (const id of LAYER_IDS) if (this.map.getLayer(id)) this.map.removeLayer(id);
     for (const id of SOURCE_IDS) if (this.map.getSource(id)) this.map.removeSource(id);

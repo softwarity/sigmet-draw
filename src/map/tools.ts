@@ -1,6 +1,7 @@
 /**
- * Built-in tool set + SVG icons for the turnkey toolbar (`SigmetDraw.addToolbar`).
- * Bring-your-own-UI hosts can ignore this and build their own `ToolbarItem`s.
+ * Built-in tool set + SVG icons for the turnkey toolbar (the `toolbar` option /
+ * the `sigmet.toolbar` controller). Bring-your-own-UI hosts can ignore this and
+ * build their own `ToolbarItem[]`, then hand them to `adapter.addToolbar(...)`.
  */
 
 /** The drawing methods a toolbar button can trigger on a {@link SigmetDraw}. */

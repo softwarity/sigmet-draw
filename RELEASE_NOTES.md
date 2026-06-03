@@ -2,6 +2,22 @@
 
 ## 1.0.1
 
+### Fixes
+
+- **Hover tooltip crash**: hovering a shape that momentarily doesn't intersect the FIR (an empty area) no longer throws — `updateTooltip` now skips areas with no fillable ring.
+- **Empty intersection**: `clip()` treats a valid-but-empty JSTS result as a genuine no-overlap (instead of passing an empty geometry downstream).
+- **Latitude band**: a reversed-but-legal encoding (`N OF N54 AND S OF N50`) is now sorted so `south ≤ north` instead of building a degenerate rectangle. Longitude bands are left untouched (a `west > east` band legitimately crosses the antimeridian).
+- **Antimeridian detection** is now structural — the FIR touches both ±180 edges (split form) or has an edge jump > 180° (jump form) — instead of a bbox-width heuristic that could misfire on a very wide non-crossing FIR.
+- **MapLibre**: a drag released outside the map canvas no longer leaves panning disabled (a window-level `mouseup` finishes the drag, mirroring the OpenLayers adapter).
+
+### Internal
+
+- **OpenLayers** hit-testing forwards the full feature property bag (parity with MapLibre).
+- Removed the unused `setCursor` from the public `MapAdapter` interface (kept private in each adapter).
+- Documented the tropical-cyclone placeholder centre (`toArea`) and the process-global toolbar `<style>` injection.
+- Added `prepublishOnly` (build + test) and `engines.node >= 18`.
+- Tests: +17 (tooltip style merge, latBand sorting, toolbar 12-position layout, `SigmetToolbar` controller); added `jsdom` for the DOM-level toolbar tests.
+
 ---
 
 ## 1.0.0

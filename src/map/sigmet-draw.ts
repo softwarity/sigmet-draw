@@ -138,6 +138,14 @@ const ringCentroid = (ring: Position[]): { x: number; y: number; area: number } 
 
 /** Anchor point for the on-shape label: centroid of the area's LARGEST polygon
  *  (handles MultiPolygon from clipping); `null` for empty/degenerate geometry. */
+/** True if the area has at least one polygon ring to hit-test against. */
+const hasFill = (area: Feature<Polygon | MultiPolygon | Point>): boolean => {
+  const g = area.geometry;
+  if (g.type === "Polygon") return (g.coordinates[0]?.length ?? 0) >= 4;
+  if (g.type === "MultiPolygon") return (g.coordinates[0]?.[0]?.length ?? 0) >= 4;
+  return false;
+};
+
 const labelAnchor = (area: Feature<Polygon | MultiPolygon | Point>): [number, number] | null => {
   const g = area.geometry;
   if (g.type === "Point") return g.coordinates as [number, number];
@@ -237,10 +245,7 @@ export class SigmetDraw {
   private applyFir(fir: FirInput): void {
     const raw: Feature<Polygon | MultiPolygon> =
       fir.type === "Feature" ? fir : { type: "Feature", properties: {}, geometry: fir };
-    // Crossing FIRs are stored split at ±180 (GeoJSON convention), so their bbox
-    // spans the full −180..180 — a lon extent > 180° is the reliable signal here.
-    const rawBbox = bboxOf(raw);
-    const crosses = rawBbox[2] - rawBbox[0] > 180;
+    const crosses = crossesAntimeridian(raw);
     this.unwrapLon = crosses ? (lon) => (lon < 0 ? lon + 360 : lon) : (lon) => lon;
     this.lonBounds = crosses ? [0, 360] : [-180, 180];
     this.firFeature = crosses
@@ -429,6 +434,10 @@ export class SigmetDraw {
   }
 
   entireFir(): void {
+    // `region` is hard-coded to "FIR" by design: choosing UIR / CTA / FIR/UIR is
+    // the host's responsibility (it knows the FIR's airspace type), so the drawing
+    // tool stays type-agnostic. The core still round-trips the other regions via
+    // load(fromTAC(...)). Intentional — not an oversight.
     this.active = { kind: "entireFir", region: "FIR" };
     this.renderActive();
   }
@@ -980,7 +989,9 @@ export class SigmetDraw {
   /** Hover tooltip: show the configured text while the cursor is over the area. */
   private updateTooltip(ev: PointerEvent): void {
     const r = this.lastResult;
-    if (!this.tooltipFn || this.dragTarget || !r || r.area.geometry.type === "Point") {
+    // Bail unless there is a fillable area: a Point, an EMPTY_AREA (no rings) or
+    // an empty MultiPolygon would crash booleanPointInPolygon.
+    if (!this.tooltipFn || this.dragTarget || !r || !hasFill(r.area)) {
       this.adapter.setTooltip(null, ev.lngLat);
       return;
     }
@@ -1184,7 +1195,6 @@ function destinationPoint(
   return [lambda2 / rad, phi2 / rad];
 }
 
-/** Perpendicular distance (deg) of b from the line a–c. */
 /** Rewrite a geometry's longitudes through `uw` (for an unwrapped AM frame). */
 function unwrapGeometry(
   g: Polygon | MultiPolygon,
@@ -1203,6 +1213,27 @@ function ringsOf(feature: Feature<Polygon | MultiPolygon>): [number, number][][]
       ? [feature.geometry.coordinates]
       : feature.geometry.coordinates;
   return polys.flatMap((poly) => poly.map((ring) => ring as [number, number][]));
+}
+
+/**
+ * Does the FIR cross the antimeridian? Structural test, not a bbox-width heuristic
+ * (a genuinely wide non-crossing FIR can span > 180° of longitude without crossing):
+ *  - split form (GeoJSON convention): the geometry touches BOTH ±180 edges;
+ *  - jump form: a ring has consecutive vertices more than 180° apart in longitude.
+ */
+function crossesAntimeridian(feature: Feature<Polygon | MultiPolygon>): boolean {
+  const rings = ringsOf(feature);
+  let touchesEast = false;
+  let touchesWest = false;
+  for (const ring of rings) {
+    for (let i = 0; i < ring.length; i++) {
+      const lon = ring[i]![0];
+      if (lon >= 179.5) touchesEast = true;
+      if (lon <= -179.5) touchesWest = true;
+      if (i > 0 && Math.abs(lon - ring[i - 1]![0]) > 180) return true; // jump form
+    }
+  }
+  return touchesEast && touchesWest; // split form
 }
 
 function segLengths(points: LatLng[]): { len: number[]; total: number } {

@@ -139,12 +139,19 @@ export function fromTAC(input: string): SigmetGeometry {
 
     if (a.isLat && b.isLat) {
       // Latitude band: "N OF <south>" gives the southern bound, "S OF <north>"
-      // gives the northern bound — order-independent.
+      // gives the northern bound — order-independent. Sort so a reversed-but-legal
+      // encoding can't yield south > north (which builds a degenerate rectangle).
       const nOf = a.dir === "N" ? a : b;
       const sOf = a.dir === "S" ? a : b;
-      return { kind: "latBand", south: nOf.value, north: sOf.value };
+      return {
+        kind: "latBand",
+        south: Math.min(nOf.value, sOf.value),
+        north: Math.max(nOf.value, sOf.value),
+      };
     }
     if (!a.isLat && !b.isLat) {
+      // Longitude band: NOT sorted — west > east is a legitimate antimeridian-crossing
+      // band (longitude wraps), indistinguishable from a "reversed" encoding.
       const eOf = a.dir === "E" ? a : b;
       const wOf = a.dir === "W" ? a : b;
       return { kind: "lonBand", west: eOf.value, east: wOf.value };
