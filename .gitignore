@@ -4,3 +4,4 @@ docs/
 *.tsbuildinfo
 .DS_Store
 coverage/
+.angular/
