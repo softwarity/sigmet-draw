@@ -1,6 +1,6 @@
 {
   "name": "@softwarity/sigmet-draw",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Draw SIGMET/AIRMET geometries on any map (grafts onto MapLibre or OpenLayers, Terra-Draw-style) and (de)serialize them to/from ICAO TAC.",
   "type": "module",
   "license": "MIT",
@@ -25,7 +25,9 @@
       "import": "./dist/map/openlayers-adapter.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -47,8 +49,12 @@
     "ol": ">=9"
   },
   "peerDependenciesMeta": {
-    "maplibre-gl": { "optional": true },
-    "ol": { "optional": true }
+    "maplibre-gl": {
+      "optional": true
+    },
+    "ol": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "maplibre-gl": "^5.24.0",
