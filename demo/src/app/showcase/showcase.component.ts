@@ -152,13 +152,13 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   /** Whether the TC button has a centre (FIR centroid here) → enabled vs greyed. */
   private tcOn = true;
   /** Live toolbar layout edited in the panel (per-side padding by active edges). */
-  private tbPos: ToolbarPosition = "top-left";
+  private tbPos: ToolbarPosition = "top";
   private tbPad1 = 10;
   private tbPad2 = 10;
   /** Edge names + centred flag driving the conditional padding display. */
   protected readonly tbEdge1 = signal("top"); // primary (anchored) edge
-  protected readonly tbEdge2 = signal("left"); // cross-axis edge (corners only)
-  protected readonly tbCentered = signal(false);
+  protected readonly tbEdge2 = signal(""); // cross-axis edge (corners only)
+  protected readonly tbCentered = signal(true);
   private sigmet?: SigmetDraw;
   private mlMap?: MapLibreMap;
   private olMap?: OlMap;
