@@ -15,7 +15,7 @@ import type {
   ToolbarItem,
   ToolbarOptions,
 } from "./adapter.js";
-import { DEFAULT_STYLE } from "./style.js";
+import { DEFAULT_STYLE, moveIconDataUri, resizeIconDataUri, transformIconDataUri } from "./style.js";
 import type { SigmetStyle } from "./style.js";
 import { populateToolbar } from "./toolbar.js";
 import { applyTooltipStyle } from "./tooltip.js";
@@ -23,7 +23,7 @@ import { applyTooltipStyle } from "./tooltip.js";
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
 /** Overlay layers this adapter owns, in draw order. */
-const LAYER_IDS = ["other-fill", "area-fill", "area-line", "guide", "handles", "label"];
+const LAYER_IDS = ["other-fill", "area-fill", "area-line", "guide", "handles", "handles-move", "handles-transform", "handles-resize", "label"];
 /** Overlay sources this adapter owns. */
 const SOURCE_IDS: OverlayId[] = ["other", "area", "guide", "handles", "label"];
 type MlHandler = (e: { lngLat: { lng: number; lat: number }; point: { x: number; y: number } }) => void;
@@ -34,13 +34,36 @@ type PointerHandlers = {
   click: MlHandler;
 };
 
-/** Data-driven pick of a handle property: control handle / collinear / plain vertex. */
-function handleCase(s: SigmetStyle, key: keyof SigmetStyle["vertex"]): unknown {
+/** Smaller dot for the move/resize handles (the glyph carries the meaning). */
+const SMALL_DOT = 0.7;
+/** Collinear (TAC-redundant) vertices are always greyed — not configurable. */
+const COLLINEAR_GREY = "#8b949e";
+/** Vertical offset (px) lifting the label above its anchor. */
+const LABEL_OFFSET_Y = -14;
+
+/** Data-driven circle paint for a handle: vertex/control vs move/resize vs
+ *  collinear vs transform (transparent, glyph-only but keeps a hit area). */
+function handleCase(s: SigmetStyle, key: "radius" | "color" | "strokeColor" | "strokeWidth"): unknown {
+  const ih = s.iconHandle;
+  const base =
+    key === "radius" ? ih.radius : key === "color" ? ih.fill : key === "strokeColor" ? ih.stroke : ih.width;
+  // Collinear dot: grey, no stroke, a touch smaller.
+  const collinear =
+    key === "color" || key === "strokeColor"
+      ? COLLINEAR_GREY
+      : key === "strokeWidth"
+        ? 0
+        : ih.radius * SMALL_DOT;
+  const small = key === "radius" ? ih.radius * SMALL_DOT : base;
+  const transform =
+    key === "color" || key === "strokeColor" ? "rgba(0,0,0,0)" : key === "strokeWidth" ? 0 : ih.radius;
   return [
     "case",
-    ["==", ["get", "control"], true], s.controlHandle[key],
-    ["==", ["get", "collinear"], true], s.collinearVertex[key],
-    s.vertex[key],
+    ["==", ["get", "transform"], true], transform,
+    ["==", ["get", "move"], true], small,
+    ["==", ["get", "resize"], true], small,
+    ["==", ["get", "collinear"], true], collinear,
+    base,
   ];
 }
 
@@ -184,7 +207,15 @@ export class MapLibreAdapter implements MapAdapter {
         const hit = needHit ? this.hitAt(e.point) : undefined;
         if (type === "move" && !this.dragging) {
           this.setCursor(
-            hit?.overlay === "handles" ? "grab" : hit?.overlay === "guide" ? "move" : "",
+            hit?.overlay === "handles"
+              ? hit.props["move"]
+                ? "move"
+                : "grab"
+              : // Only draggable guide lines (meridian/parallel — they carry a
+                // `role`) get the move cursor; construction guides don't.
+                hit?.overlay === "guide" && hit.props["role"]
+                ? "move"
+                : "",
           );
         }
         cb({
@@ -254,6 +285,45 @@ export class MapLibreAdapter implements MapAdapter {
     return { overlay, props: (found.properties ?? {}) as Record<string, unknown> };
   }
 
+  /** Move/transform/resize handle icons (drawn over the handle dot). */
+  private addMoveIcon(s: SigmetStyle): void {
+    const c = s.iconHandle.stroke;
+    this.addHandleIcon("sigmet-move", "handles-move", "move", moveIconDataUri(c));
+    this.addHandleIcon("sigmet-transform", "handles-transform", "transform", transformIconDataUri(c));
+    this.addHandleIcon("sigmet-resize", "handles-resize", "resize", resizeIconDataUri(c));
+  }
+
+  /** Load an SVG icon and add its symbol layer; re-callable to recolour live
+   *  (updates the image in place when it already exists). */
+  private addHandleIcon(imageId: string, layerId: string, prop: string, dataUri: string): void {
+    const ensureLayer = (): void => {
+      if (this.map.getLayer(layerId) || !this.map.getSource("handles")) return;
+      this.map.addLayer({
+        id: layerId,
+        type: "symbol",
+        source: "handles",
+        filter: ["==", ["get", prop], true],
+        layout: {
+          "icon-image": imageId,
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+          "icon-rotate": ["coalesce", ["get", "iconRotate"], 0],
+        },
+      });
+    };
+    if (typeof Image === "undefined") {
+      ensureLayer(); // non-DOM env: dot only
+      return;
+    }
+    const img = new Image(30, 30);
+    img.onload = (): void => {
+      if (this.map.hasImage(imageId)) this.map.updateImage(imageId, img);
+      else this.map.addImage(imageId, img);
+      ensureLayer();
+    };
+    img.src = dataUri;
+  }
+
   private addOverlays(): void {
     for (const id of ["other", "area", "guide", "handles", "label"] as OverlayId[]) {
       if (!this.map.getSource(id)) {
@@ -265,33 +335,25 @@ export class MapLibreAdapter implements MapAdapter {
       id: "other-fill",
       type: "fill",
       source: "other",
-      paint: { "fill-color": s.other.fill.color, "fill-opacity": s.other.fill.opacity },
+      paint: { "fill-color": s.other.fill, "fill-opacity": s.other.opacity },
     });
     this.map.addLayer({
       id: "area-fill",
       type: "fill",
       source: "area",
-      paint: { "fill-color": s.area.fill.color, "fill-opacity": s.area.fill.opacity },
+      paint: { "fill-color": s.area.fill, "fill-opacity": s.area.opacity },
     });
     this.map.addLayer({
       id: "area-line",
       type: "line",
       source: "area",
-      paint: {
-        "line-color": s.area.line.color,
-        "line-width": s.area.line.width,
-        ...(s.area.line.dash ? { "line-dasharray": s.area.line.dash } : {}),
-      },
+      paint: { "line-color": s.area.stroke, "line-width": s.area.width },
     });
     this.map.addLayer({
       id: "guide",
       type: "line",
       source: "guide",
-      paint: {
-        "line-color": s.guide.color,
-        "line-width": s.guide.width,
-        ...(s.guide.dash ? { "line-dasharray": s.guide.dash } : {}),
-      },
+      paint: { "line-color": s.lineHandle.stroke, "line-width": s.lineHandle.width },
     });
     this.map.addLayer({
       id: "handles",
@@ -305,6 +367,8 @@ export class MapLibreAdapter implements MapAdapter {
         "circle-stroke-width": handleCase(s, "strokeWidth") as number,
       },
     });
+    // Decorative chevron ring around the move handle (drawn over its dot).
+    this.addMoveIcon(s);
     this.map.addLayer({
       id: "label",
       type: "symbol",
@@ -312,14 +376,16 @@ export class MapLibreAdapter implements MapAdapter {
       layout: {
         "text-field": ["get", "text"],
         "text-size": s.label.size,
-        "text-offset": [0, s.label.offsetY / s.label.size],
+        "text-offset": [0, LABEL_OFFSET_Y / s.label.size],
         "text-anchor": "bottom",
         "text-allow-overlap": true,
+        // text-max-width is in ems → convert from the px budget.
+        "text-max-width": s.label.width / s.label.size,
       },
       paint: {
         "text-color": s.label.color,
-        "text-halo-color": s.label.haloColor,
-        "text-halo-width": s.label.haloWidth,
+        "text-halo-color": s.label.halo,
+        "text-halo-width": Math.ceil(s.label.size / 10),
       },
     });
   }
@@ -328,24 +394,24 @@ export class MapLibreAdapter implements MapAdapter {
   private applyStyle(): void {
     const s = this.style;
     const map = this.map;
-    map.setPaintProperty("other-fill", "fill-color", s.other.fill.color);
-    map.setPaintProperty("other-fill", "fill-opacity", s.other.fill.opacity);
-    map.setPaintProperty("area-fill", "fill-color", s.area.fill.color);
-    map.setPaintProperty("area-fill", "fill-opacity", s.area.fill.opacity);
-    map.setPaintProperty("area-line", "line-color", s.area.line.color);
-    map.setPaintProperty("area-line", "line-width", s.area.line.width);
-    map.setPaintProperty("area-line", "line-dasharray", s.area.line.dash ?? null);
-    map.setPaintProperty("guide", "line-color", s.guide.color);
-    map.setPaintProperty("guide", "line-width", s.guide.width);
-    map.setPaintProperty("guide", "line-dasharray", s.guide.dash ?? null);
+    map.setPaintProperty("other-fill", "fill-color", s.other.fill);
+    map.setPaintProperty("other-fill", "fill-opacity", s.other.opacity);
+    map.setPaintProperty("area-fill", "fill-color", s.area.fill);
+    map.setPaintProperty("area-fill", "fill-opacity", s.area.opacity);
+    map.setPaintProperty("area-line", "line-color", s.area.stroke);
+    map.setPaintProperty("area-line", "line-width", s.area.width);
+    map.setPaintProperty("guide", "line-color", s.lineHandle.stroke);
+    map.setPaintProperty("guide", "line-width", s.lineHandle.width);
     map.setPaintProperty("handles", "circle-radius", handleCase(s, "radius") as number);
     map.setPaintProperty("handles", "circle-color", handleCase(s, "color") as string);
     map.setPaintProperty("handles", "circle-stroke-color", handleCase(s, "strokeColor") as string);
     map.setPaintProperty("handles", "circle-stroke-width", handleCase(s, "strokeWidth") as number);
+    this.addMoveIcon(s); // recolour the move/transform/resize glyphs live
     map.setLayoutProperty("label", "text-size", s.label.size);
-    map.setLayoutProperty("label", "text-offset", [0, s.label.offsetY / s.label.size]);
+    map.setLayoutProperty("label", "text-offset", [0, LABEL_OFFSET_Y / s.label.size]);
+    map.setLayoutProperty("label", "text-max-width", s.label.width / s.label.size);
     map.setPaintProperty("label", "text-color", s.label.color);
-    map.setPaintProperty("label", "text-halo-color", s.label.haloColor);
-    map.setPaintProperty("label", "text-halo-width", s.label.haloWidth);
+    map.setPaintProperty("label", "text-halo-color", s.label.halo);
+    map.setPaintProperty("label", "text-halo-width", Math.ceil(s.label.size / 10));
   }
 }

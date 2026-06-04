@@ -65,7 +65,7 @@ const sigmet = new SigmetDraw({
   tooltip: (r) => r.tac,                 // optional floating tooltip on hover
   nauticalMilesOnly: false,              // optional — never emit KM when true
   toolbar: { position: "top-left" },     // optional turnkey toolbar (see below)
-  style: { area: { fill: { color: "#e11d48", opacity: 0.3 } } }, // optional, see below
+  style: { area: { fill: "#e11d48", opacity: 0.3 } }, // optional, see below
 });
 
 sigmet.on("tac", (tac) => console.log(tac));                    // just the TAC — common case
@@ -150,21 +150,20 @@ shows a floating box **on hover** over it — both are `(result) => string`.
 
 ```ts
 sigmet.setStyle({
-  area: { fill: { color: "#e11d48", opacity: 0.3 }, line: { color: "#e11d48", width: 2 } },
-  guide: { color: "#22d3ee", width: 3 },   // construction segments/curves
-  vertex: { color: "#fff" },               // points kept in the TAC
-  collinearVertex: { color: "#64748b" },   // aligned points (ignored)
-  controlHandle: { color: "#22d3ee" },     // radius / width handle
-  label: { color: "#fff", size: 13, haloColor: "#0b1622" },
-  tooltip: { background: "#0b1622", color: "#e6edf3", fontSize: 12 },
+  area: { fill: "#e11d48", opacity: 0.3, stroke: "#e11d48", width: 2 },
+  lineHandle: { stroke: "#22d3ee", width: 3 },        // guides + meridian/parallel lines
+  iconHandle: { fill: "#fff", stroke: "#22d3ee" },    // all dot handles + glyphs (glyph colour = stroke)
+  label: { color: "#fff", halo: "#0b1622", size: 13, width: 180 }, // width = max px → wraps
+  tooltip: { color: "#e6edf3", background: "#0b1622", size: 12 },
 });
 sigmet.setLabel((r) => r.geometry.kind);   // on-shape text (null to hide)
 sigmet.setTooltip((r) => r.tac);           // hover tooltip (null to hide)
 ```
 
-Tokens: `area.fill`, `area.line`, `other.fill`, `guide`, `vertex`,
-`collinearVertex`, `controlHandle`, `label`, `tooltip`. See `DEFAULT_STYLE` /
-`mergeStyle`.
+Tokens: `area`, `other`, `iconHandle` (dots: vertices + move/resize/transform/radius),
+`lineHandle` (guides + meridian/parallel lines), `label`, `tooltip`. Collinear
+(TAC-redundant) vertices are **always greyed** and not configurable. See
+`DEFAULT_STYLE` / `mergeStyle`.
 
 ### Core only (no map)
 
@@ -211,13 +210,14 @@ toArea(g, { fir });                // GeoJSON Feature, clipped to the FIR
 
 | Token | Fields |
 |-------|--------|
-| `area.fill` | `color`, `opacity` |
-| `area.line` | `color`, `width`, `dash?` |
-| `other.fill` | `color`, `opacity` |
-| `guide` | `color`, `width`, `dash?` |
-| `vertex` / `collinearVertex` / `controlHandle` | `radius`, `color`, `strokeColor`, `strokeWidth` |
-| `label` | `color`, `size`, `haloColor`, `haloWidth`, `offsetY` |
-| `tooltip` | `background`, `color`, `fontSize`, `padding`, `borderRadius`, `maxWidth` |
+| `area` | `fill`, `stroke`, `width`, `opacity` |
+| `other` | `fill`, `opacity` |
+| `iconHandle` | `fill`, `stroke`, `width`, `radius` |
+| `lineHandle` | `stroke`, `width` |
+| `label` | `color`, `halo`, `size`, `width` *(width = max px before wrapping; halo thickness derived from size)* |
+| `tooltip` | `color`, `background`, `size` |
+
+All grab handles (vertices, move / resize / transform / radius) share `iconHandle`; the move/resize dot is rendered smaller and the chevron/rotate glyphs are coloured from `iconHandle.stroke` (recoloured live on `setStyle`). **Collinear (TAC-redundant) vertices are always shown as a smaller, stroke-less grey dot** — that state isn't styleable.
 
 Helpers: `DEFAULT_STYLE`, `mergeStyle(base, partial)`, `rgba(hex, opacity)`.
 

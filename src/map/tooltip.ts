@@ -7,14 +7,14 @@ export function applyTooltipStyle(el: HTMLElement, t: TooltipStyle): void {
     pointerEvents: "none",
     zIndex: "4",
     transform: "translate(12px, 12px)", // offset from the cursor
-    maxWidth: t.maxWidth,
+    maxWidth: "260px",
     whiteSpace: "normal",
     overflowWrap: "anywhere", // wrap long TAC strings instead of one wide line
     background: t.background,
     color: t.color,
-    fontSize: `${t.fontSize}px`,
+    fontSize: `${t.size}px`,
     lineHeight: "1.35",
-    padding: t.padding,
-    borderRadius: t.borderRadius,
+    padding: "3px 7px",
+    borderRadius: "4px",
   } satisfies Partial<CSSStyleDeclaration>);
 }

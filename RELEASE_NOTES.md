@@ -2,6 +2,44 @@
 
 ## 1.0.4
 
+### Features
+
+- **Move handle with chevron icon**: the polygon, circle and **buffer of line** (wide line) now carry a **move** handle — a small dot ringed by four outward chevrons (N/E/S/W) — that translates the whole shape, with a `move` (four-arrow) hover cursor. Edits (move, scale, rotate, vertex) are allowed as long as **at least one point stays inside the FIR** — handles and even most points may leave it (the circle keeps its centre in, as before). The icon renders on both the MapLibre and OpenLayers adapters; its dot and glyph are themed from the unified `iconHandle` token (see the style restructure below).
+- **Polygon transform handle**: a handle at the top-right bounding-box corner now **scales *and* rotates** the whole ring about its centroid — drag in/out to resize, drag around to spin. It carries a rotate/resize glyph (a curved double-headed arrow between two radial chevrons, no centre dot) that **spins with the handle's orbit angle**. The handle rides its material position during the gesture (so rotation stays stable). Editing a 7-point area no longer means dragging every vertex.
+- **Circle resize glyph**: the circle's radius handle now shows the same radial resize chevrons (centre ↔ exterior, no rotation arc) over a small dot, spinning with its bearing — consistent with the polygon transform handle.
+- **Buffer of line — transform handle**: the wide line gains the same corner **scale+rotate** handle as the polygon, placed just outside its envelope (so it never crowds the move/width/vertex handles). Its width handle shows the same **resize chevrons** as the circle radius and **rides the whole buffer border** — it slides along the straight sides and, when dragged past an end, follows the **rounded cap arc** (its offset is stored as a bearing relative to the line, so it survives edits). It starts from an extremity so it doesn't sit on the move handle. Scale + rotate share the polygon's `applyTransform`/`transformRest` core, so there's no start-of-rotation jump. The redundant centreline guide is no longer drawn — the filled buffer already shows it.
+- **Line side & corridor — draggable lines + transform**: their construction lines are now **grabbable** (drag the line body to translate it — incrementally, no grab jump; each corridor leg moves on its own), and each gains the same corner **scale + rotate** handle as the polygon (the corridor's rotates both legs about their joint centroid). Throughout, the **two endpoints stay pinned to the FIR border** (re-snapped after any drag/transform), and edits respect the *one-point-in-FIR* rule. New lines are created along the **SW→NE diagonal (~45°)** so they read differently from the horizontal/vertical lat- and lon-bands (the diagonal is clipped to the FIR bbox so the two corridor legs stay distinct instead of collapsing onto one line). The move cursor now appears only on lines you can actually drag (those carrying a role).
+
+### Fixes
+
+- **Polygon default vertices**: a new polygon now starts with **7** vertices (the WMO maximum for a `WI` polygon) instead of 5; redundant/collinear corners are still auto-dropped from the TAC and area.
+- **Orphan / isolated polygon nodes & spurious crossings**: collinear simplification dropped a vertex when it was near-straight with its *immediate* neighbours, so a gently bowing run was removed wholesale — the dropped handles floated off the outline and the surviving chord could cut across a concavity. `collapseRing` is now a proper **Douglas-Peucker** simplification using distance to the *segment* (not the infinite line), which provably keeps every dropped vertex within `tol` of the simplified outline — no orphan nodes, no collapse-induced crossing. Verified by an exhaustive drag sweep.
+- **Small polygons**: the snap / merge / collapse tolerances now scale with the **polygon's own size**, not the FIR span. A small polygon's FIR-relative thresholds used to dwarf it, fusing nearby vertices and flagging them all as collinear (ignored). They're now scale-invariant.
+- **Vertex editing (all editable shapes)**: a vertex moves and acts only on its adjacent edge(s). It keeps a clearance from every other vertex (can't merge two points) and from every non-adjacent edge — so it can't land on a segment, cross one (bow-tie), **or sweep its edge over another vertex**. The guard applies to the polygon and to the open-line shapes — **line side**, **corridor** legs and **buffer of line** (wide line) — which had the same self-crossing bug. The vertex sticks just shy of the obstacle until the cursor leads it elsewhere.
+
+### Breaking — style API restructured
+
+The `SigmetStyle` tokens are renamed and flattened around two ideas — *things you grab by a dot* and *things you grab by a line* — with consistent `fill` / `stroke` / `width` naming:
+
+```
+area:       { fill, stroke, width, opacity }          // was { fill:{color,opacity}, line:{color,width} }
+other:      { fill, opacity }                          // was { fill:{color,opacity} }
+iconHandle: { fill, stroke, width, radius }           // merges vertex + controlHandle + moveHandle
+lineHandle: { stroke, width }                          // was guide
+label:      { color, halo, size, width }               // width = max label px (wraps); halo from size
+tooltip:    { color, background, size }                // was { …, fontSize, padding, borderRadius, maxWidth }
+```
+
+- All handles (vertex / control / move / resize / transform / radius) now share **one** `iconHandle` look; the smaller move/resize dot is derived (×0.7) and the glyphs are coloured from `iconHandle.stroke`.
+- `lineHandle` styles construction guides **and** the draggable meridian/parallel lines.
+- Removed exports: `FillStyle`, `LineStyle`, `PointStyle`. Added: `AreaStyle`, `OtherStyle`, `IconHandleStyle`, `LineHandleStyle`.
+- **Collinear (TAC-redundant) vertices are always shown as a smaller, stroke-less grey dot** — that state is no longer styleable (the old `collinearVertex` token is gone, with no replacement).
+- Dropped (now internal constants): line `dash`, label `offsetY`, tooltip `padding` / `borderRadius` / `maxWidth`.
+
+### Internal
+
+- New pure, unit-tested geometry helpers: `segmentsCross` (proper crossing), `segmentDistance` (segment-to-segment clearance), and `ringMoveValid` / `lineMoveValid` (closed-ring & open-polyline edit legality: vertex/edge clearances + edge-vs-vertex sweep guard, sharing one `pathMoveValid` core). `collapseRing` is now a Douglas-Peucker simplification (segment distance). New `moveIconDataUri` style helper for the chevron move icon. Tests: +22.
+
 ---
 
 ## 1.0.3

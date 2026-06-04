@@ -346,29 +346,33 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
     const style: SigmetStyleInput = {
       area: on("area")
         ? {
-            fill: { color: String(val("areaColor")), opacity: Number(val("areaOpacity")) },
-            line: { color: String(val("areaLineColor")), width: Number(val("areaLineWidth")) },
+            fill: String(val("areaColor")),
+            opacity: Number(val("areaOpacity")),
+            stroke: String(val("areaLineColor")),
+            width: Number(val("areaLineWidth")),
           }
         : D.area,
-      guide: on("guide")
-        ? { color: String(val("guideColor")), width: Number(val("guideWidth")) }
-        : D.guide,
-      vertex: on("vertex") ? { ...D.vertex, color: String(val("vertexColor")) } : D.vertex,
-      collinearVertex: on("collinear")
-        ? { ...D.collinearVertex, color: String(val("collinearColor")) }
-        : D.collinearVertex,
-      controlHandle: on("control")
-        ? { ...D.controlHandle, color: String(val("controlColor")) }
-        : D.controlHandle,
+      lineHandle: on("guide")
+        ? { stroke: String(val("guideColor")), width: Number(val("guideWidth")) }
+        : D.lineHandle,
+      iconHandle: on("vertex")
+        ? { ...D.iconHandle, fill: String(val("vertexColor")), stroke: String(val("controlColor")) }
+        : D.iconHandle,
       label: on("label")
-        ? { ...D.label, color: String(val("labelColor")), size: Number(val("labelSize")) }
+        ? {
+            ...D.label,
+            color: String(val("labelColor")),
+            halo: String(val("labelHalo")),
+            size: Number(val("labelSize")),
+            width: Number(val("labelWidth")),
+          }
         : D.label,
       tooltip: on("tooltip")
         ? {
             ...D.tooltip,
             color: String(val("tipColor")),
             background: String(val("tipBg")),
-            maxWidth: `${Number(val("tipW"))}px`,
+            size: Number(val("tipSize")),
           }
         : D.tooltip,
     };

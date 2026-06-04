@@ -24,7 +24,15 @@ import type {
 import { toArea, toTAC } from "../core/index.js";
 import type { FirInput, LatLng, LineSide, SigmetGeometry } from "../core/index.js";
 import type { MapAdapter, PointerEvent } from "./adapter.js";
-import { collapseCollinear, collapseRing, perpDist, radiusFor, widthFor } from "./geometry.js";
+import {
+  collapseCollinear,
+  collapseRing,
+  lineMoveValid,
+  perpDist,
+  radiusFor,
+  ringMoveValid,
+  widthFor,
+} from "./geometry.js";
 import { DEFAULT_STYLE, mergeStyle } from "./style.js";
 import type { SigmetStyle, SigmetStyleInput } from "./style.js";
 import { SigmetToolbar } from "./toolbar-controller.js";
@@ -176,6 +184,10 @@ export class SigmetDraw {
 
   private active: SigmetGeometry | null = null;
   private dragTarget: DragTarget | null = null;
+  /** Live position of the polygon scale/rotate handle while it is being dragged. */
+  private sizeAnchor: LatLng | null = null;
+  /** Cursor at the previous drag step — for incremental whole-line translation. */
+  private dragLast: LatLng | null = null;
   private destroyed = false;
   /** When true, radii/widths are always nautical miles (never KM). */
   private nmOnly = false;
@@ -186,8 +198,10 @@ export class SigmetDraw {
   private circleBearing = 90;
   /** UI-only: width handle placement, relative to the line so it survives edits:
    * fraction along the line (0..1) and which side (+1 / -1). */
-  private widthT = 0.5;
-  private widthSide = 1;
+  private widthT = 0; // width handle pinned to the line's start (an extremity)
+  /** Offset bearing of the width handle, relative to the line direction (deg).
+   *  ±90 = a straight side; other values ride a rounded cap. */
+  private widthAngle = 90;
   /** Longitude frame: identity normally; shifts negatives by +360 for a FIR that
    * crosses the antimeridian, so all geometry is contiguous. */
   private unwrapLon!: (lon: number) => number;
@@ -299,8 +313,8 @@ export class SigmetDraw {
   /** Load an existing geometry (e.g. from `fromTAC`) and render it for editing. */
   load(geometry: SigmetGeometry): void {
     this.circleBearing = 90;
-    this.widthT = 0.5;
-    this.widthSide = 1;
+    this.widthT = 0;
+    this.widthAngle = 90;
     this.active = geometry;
     this.renderActive();
   }
@@ -392,38 +406,47 @@ export class SigmetDraw {
     this.renderActive();
   }
 
-  lineSide(): void {
+  /**
+   * A 4-point line along the FIR's SW→NE diagonal (45°-ish), offset perpendicular
+   * by `perpOffset`. Endpoints snap to the border; oblique on purpose so a line /
+   * corridor reads differently from the horizontal/vertical lat- and lon-bands.
+   */
+  private diagLine(perpOffset: number): LatLng[] {
     const [minLon, minLat, maxLon, maxLat] = this.firBbox;
-    const midLat = (minLat + maxLat) / 2;
-    // 4 points (the LINE max): endpoints snapped to the border, 2 inner points
-    // interpolated so the line starts straight — the user bends them if needed.
-    const a0 = this.nearestOnFir({ lat: midLat, lon: minLon });
-    const a3 = this.nearestOnFir({ lat: midLat, lon: maxLon });
+    const dx = maxLon - minLon || 1;
+    const dy = maxLat - minLat || 1;
+    const len = Math.hypot(dx, dy);
+    const d = { lon: dx / len, lat: dy / len }; // SW→NE diagonal
+    const perp = { lon: -d.lat, lat: d.lon };
+    const cx = (minLon + maxLon) / 2 + perp.lon * perpOffset;
+    const cy = (minLat + maxLat) / 2 + perp.lat * perpOffset;
+    // Clip the *offset* diagonal to the bbox so each leg gets distinct entry/exit
+    // points — casting far points would snap both legs to the same FIR extremum.
+    const sx = [(minLon - cx) / d.lon, (maxLon - cx) / d.lon];
+    const sy = [(minLat - cy) / d.lat, (maxLat - cy) / d.lat];
+    const sEnter = Math.max(Math.min(...sx), Math.min(...sy));
+    const sExit = Math.min(Math.max(...sx), Math.max(...sy));
+    const a0 = this.nearestOnFir({ lon: cx + d.lon * sEnter, lat: cy + d.lat * sEnter });
+    const a3 = this.nearestOnFir({ lon: cx + d.lon * sExit, lat: cy + d.lat * sExit });
     const lerp = (k: number): LatLng => ({
       lat: a0.lat + (a3.lat - a0.lat) * k,
       lon: a0.lon + (a3.lon - a0.lon) * k,
     });
-    this.active = { kind: "lineSide", points: [a0, lerp(1 / 3), lerp(2 / 3), a3], side: "N" };
+    return [a0, lerp(1 / 3), lerp(2 / 3), a3];
+  }
+
+  lineSide(): void {
+    this.active = { kind: "lineSide", points: this.diagLine(0), side: "N" };
     this.renderActive();
   }
 
   corridor(): void {
-    const [minLon, minLat, maxLon, maxLat] = this.firBbox;
-    const mid = (minLat + maxLat) / 2;
+    const [, minLat, , maxLat] = this.firBbox;
     const off = (maxLat - minLat) * 0.18;
-    const mkLine = (lat: number): LatLng[] => {
-      const a0 = this.nearestOnFir({ lat, lon: minLon });
-      const a3 = this.nearestOnFir({ lat, lon: maxLon });
-      const lerp = (k: number): LatLng => ({
-        lat: a0.lat + (a3.lat - a0.lat) * k,
-        lon: a0.lon + (a3.lon - a0.lon) * k,
-      });
-      return [a0, lerp(1 / 3), lerp(2 / 3), a3];
-    };
     this.active = {
       kind: "corridor",
-      lineA: { points: mkLine(mid - off), side: "N" },
-      lineB: { points: mkLine(mid + off), side: "S" },
+      lineA: { points: this.diagLine(-off), side: "N" },
+      lineB: { points: this.diagLine(off), side: "S" },
     };
     this.renderActive();
   }
@@ -447,7 +470,9 @@ export class SigmetDraw {
     const c = this.viewInteriorPoint();
     const rx = (maxLon - minLon) * 0.18;
     const ry = (maxLat - minLat) * 0.18;
-    const n = 5;
+    // 7 vertices — the WMO max for a SIGMET `WI` polygon; the user prunes
+    // redundant corners (collinear ones are auto-dropped from the TAC/area).
+    const n = 7;
     const points = Array.from({ length: n }, (_, i) => {
       const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
       return { lat: c.lat + ry * Math.sin(ang), lon: c.lon + rx * Math.cos(ang) };
@@ -462,8 +487,8 @@ export class SigmetDraw {
     const w = maxLon - minLon;
     // 4 points (the WID LINE max: P1 – P2 [– P3] [– P4]), initially straight;
     // the user bends/aligns them. Default ~50 km width (or 30 NM in NM-only mode).
-    this.widthT = 0.5;
-    this.widthSide = 1;
+    this.widthT = 0;
+    this.widthAngle = 90;
     const x0 = c.lon - w * 0.3;
     const x1 = c.lon + w * 0.3;
     this.active = {
@@ -517,6 +542,7 @@ export class SigmetDraw {
           const role = ev.hit.props["role"];
           if (typeof role === "string") {
             this.dragTarget = role;
+            this.dragLast = this.uw(ev.lngLat); // anchor for whole-line translation
             this.adapter.setPanEnabled(false);
           }
         }
@@ -570,27 +596,65 @@ export class SigmetDraw {
             else if (t === "lon") a.lon = clamp(lon, minLon, maxLon);
             break;
           case "lineSide": {
-            const r = Math.max(maxLon - minLon, maxLat - minLat) * 0.25;
+            const span = Math.max(maxLon - minLon, maxLat - minLat);
+            if (t === "line") {
+              // Drag the whole line (translate); endpoints stay pinned to the border.
+              a.points = this.snapEnds(this.translateLine(a.points, lon, lat));
+              break;
+            }
+            if (t === "size") {
+              // Corner handle: scale + rotate the whole line about its centroid.
+              if (!this.sizeAnchor) this.sizeAnchor = this.transformRest(a.points, 0.18);
+              const next = this.applyTransform(a.points, lon, lat, span);
+              if (this.someInFir(next.points)) {
+                a.points = this.snapEnds(next.points);
+                this.sizeAnchor = next.anchor;
+              }
+              break;
+            }
             const i = Number(t.slice(1));
             const cur = a.points[i];
             if (cur) {
               const isEnd = i === 0 || i === a.points.length - 1;
-              a.points[i] = isEnd
-                ? this.nearestOnFir({ lat, lon }, cur, r)
+              const cand = isEnd
+                ? this.nearestOnFir({ lat, lon }, cur, span * 0.25)
                 : this.snapCollinear(a.points, i, { lat, lon }, false);
+              // Same self-crossing / merge guard as the polygon, on an open line.
+              if (lineMoveValid(a.points, i, cand, span * 0.015, span * 0.005)) a.points[i] = cand;
             }
             break;
           }
           case "corridor": {
-            const r = Math.max(maxLon - minLon, maxLat - minLat) * 0.25;
+            const span = Math.max(maxLon - minLon, maxLat - minLat);
+            if (t === "lineA" || t === "lineB") {
+              // Drag one whole leg (translate); endpoints stay pinned to the border.
+              const line = t === "lineA" ? a.lineA : a.lineB;
+              line.points = this.snapEnds(this.translateLine(line.points, lon, lat));
+              break;
+            }
+            if (t === "size") {
+              // Corner handle: scale + rotate both legs about their joint centroid.
+              const nA = a.lineA.points.length;
+              const all = [...a.lineA.points, ...a.lineB.points];
+              if (!this.sizeAnchor) this.sizeAnchor = this.transformRest(all, 0.18);
+              const next = this.applyTransform(all, lon, lat, span);
+              if (this.someInFir(next.points)) {
+                a.lineA.points = this.snapEnds(next.points.slice(0, nA));
+                a.lineB.points = this.snapEnds(next.points.slice(nA));
+                this.sizeAnchor = next.anchor;
+              }
+              break;
+            }
             const line = t[0] === "a" ? a.lineA : a.lineB;
             const i = Number(t.slice(1));
             const cur = line.points[i];
             if (cur) {
               const isEnd = i === 0 || i === line.points.length - 1;
-              line.points[i] = isEnd
-                ? this.nearestOnFir({ lat, lon }, cur, r)
+              const cand = isEnd
+                ? this.nearestOnFir({ lat, lon }, cur, span * 0.25)
                 : this.snapCollinear(line.points, i, { lat, lon }, false);
+              if (lineMoveValid(line.points, i, cand, span * 0.015, span * 0.005))
+                line.points[i] = cand;
             }
             break;
           }
@@ -599,27 +663,92 @@ export class SigmetDraw {
             if (this.inFir({ lat, lon })) a.position = { lat, lon };
             break;
           case "polygon": {
+            if (t === "move") {
+              // Translate the ring so its centroid follows the cursor. Allowed as
+              // long as at least one vertex stays in the FIR (the handle itself may
+              // leave it).
+              const cen = pointsMean(a.points);
+              const dLon = lon - cen.lon;
+              const dLat = lat - cen.lat;
+              const moved = a.points.map((p) => ({ lon: p.lon + dLon, lat: p.lat + dLat }));
+              if (this.someInFir(moved)) a.points = moved;
+              break;
+            }
+            if (t === "size") {
+              // Transform handle: scale + rotate the ring about its centroid —
+              // drag in/out scales, drag around rotates. Committed only while at
+              // least one vertex stays in the FIR (so it can't be flung fully out).
+              const span = Math.max(maxLon - minLon, maxLat - minLat);
+              if (!this.sizeAnchor) this.sizeAnchor = this.transformRest(a.points);
+              const next = this.applyTransform(a.points, lon, lat, span);
+              if (this.someInFir(next.points)) {
+                a.points = next.points;
+                this.sizeAnchor = next.anchor;
+              }
+              break;
+            }
             const i = Number(t.slice(1));
-            if (a.points[i]) a.points[i] = this.snapCollinear(a.points, i, { lat, lon }, true);
+            if (a.points[i]) {
+              // Tolerances scale with the polygon's own size, not the FIR span —
+              // otherwise a small polygon's vertices all fall within the (huge)
+              // FIR-relative thresholds and get fused / dropped.
+              const pspan = pointsSpan(a.points);
+              const cand = this.snapCollinear(a.points, i, { lat, lon }, true, pspan * 0.01);
+              // A vertex moves only on its two adjacent edges: it can't merge with
+              // another point, land on a segment, or cross the ring. The vertex
+              // gap (~collapse tol) keeps two points from ever grouping; the edge
+              // gap is finer so corners can still sit close to a far edge.
+              const keepsAnchor =
+                this.inFir(cand) || a.points.some((p, j) => j !== i && this.inFir(p));
+              if (keepsAnchor && ringMoveValid(a.points, i, cand, pspan * 0.015, pspan * 0.005))
+                a.points[i] = cand;
+            }
             break;
           }
           case "wideLine": {
-            if (t === "w") {
+            if (t === "move") {
+              // Translate the centreline so its midpoint follows the cursor.
+              // Allowed while at least one point stays in the FIR.
+              const cen = pointsMean(a.points);
+              const dLon = lon - cen.lon;
+              const dLat = lat - cen.lat;
+              const moved = a.points.map((p) => ({ lon: p.lon + dLon, lat: p.lat + dLat }));
+              if (this.someInFir(moved)) a.points = moved;
+            } else if (t === "size") {
+              // Zoom+rotate handle in a corner of the line's envelope — exactly
+              // like the polygon (scale + rotate the centreline about its centroid).
+              const span = Math.max(maxLon - minLon, maxLat - minLat);
+              if (!this.sizeAnchor) this.sizeAnchor = this.transformRest(a.points, 0.18);
+              const next = this.applyTransform(a.points, lon, lat, span);
+              if (this.someInFir(next.points)) {
+                a.points = next.points;
+                this.sizeAnchor = next.anchor;
+              }
+            } else if (t === "w") {
+              // Width handle rides the *whole* buffer border (like the circle
+              // radius rides its edge): it slides along the centreline (widthT) and
+              // the offset bearing (`widthAngle`) follows the cursor. When the
+              // cursor passes an end, `projectFraction` clamps the foot to the tip,
+              // so the offset becomes radial — the handle rides the rounded cap.
               const cursor = { lat, lon };
               const { point: foot, t: ft } = projectFraction(cursor, a.points);
               const halfNM = haversineNM([foot.lon, foot.lat], [lon, lat]);
               const { unit, width } = widthFor(halfNM, this.nmOnly);
               a.unit = unit;
               a.width = width;
-              // Follows the cursor: position along the line + side (both kept on edits).
               this.widthT = ft;
               const lineBrg = bearingDeg(a.points[0]!, a.points[a.points.length - 1]!);
-              const toCursor = bearingDeg(foot, cursor);
-              this.widthSide =
-                angleDiff(toCursor, lineBrg + 90) <= angleDiff(toCursor, lineBrg - 90) ? 1 : -1;
+              this.widthAngle = bearingDeg(foot, cursor) - lineBrg;
             } else {
               const i = Number(t.slice(1));
-              if (a.points[i]) a.points[i] = this.snapCollinear(a.points, i, { lat, lon }, false);
+              if (a.points[i]) {
+                const span = Math.max(maxLon - minLon, maxLat - minLat);
+                const cand = this.snapCollinear(a.points, i, { lat, lon }, false);
+                const keepsAnchor =
+                  this.inFir(cand) || a.points.some((p, j) => j !== i && this.inFir(p));
+                if (keepsAnchor && lineMoveValid(a.points, i, cand, span * 0.015, span * 0.005))
+                  a.points[i] = cand;
+              }
             }
             break;
           }
@@ -630,6 +759,8 @@ export class SigmetDraw {
       case "up": {
         if (this.dragTarget) {
           this.dragTarget = null;
+          this.sizeAnchor = null;
+          this.dragLast = null;
           this.adapter.setPanEnabled(true);
         }
         return;
@@ -769,19 +900,23 @@ export class SigmetDraw {
       // Clear on no-overlap (and clear a previous shape's fill on tool switch).
       this.adapter.setOverlay("area", selected ? fc([selected]) : EMPTY);
       this.adapter.setOverlay("other", opposite ? fc([opposite]) : EMPTY);
-      // Endpoints sit on the border; the line only pokes slightly past it.
-      // No role → the line itself isn't grabbable; you drag the point handles.
-      this.adapter.setOverlay(
-        "guide",
-        fc([lineFeature(extendLine(a.points, span * 0.06))]),
-      );
+      // The line carries a role → it's grabbable: drag the body to translate it.
+      this.adapter.setOverlay("guide", fc([lineFeature(extendLine(a.points, span * 0.06), "line")]));
+      // Scale+rotate handle in a corner of the line's envelope (like the polygon).
+      const sizeAt =
+        this.dragTarget === "size" && this.sizeAnchor
+          ? this.sizeAnchor
+          : this.transformRest(a.points, 0.18);
+      const cen = pointsMean(a.points);
+      const sizeRot = (Math.atan2(sizeAt.lon - cen.lon, sizeAt.lat - cen.lat) * 180) / Math.PI;
       this.adapter.setOverlay(
         "handles",
-        fc(
-          a.points.map((p, i) =>
+        fc([
+          ...a.points.map((p, i) =>
             pointFeature(p.lon, p.lat, `v${i}`, { collinear: collinear[i] === true }),
           ),
-        ),
+          pointFeature(sizeAt.lon, sizeAt.lat, "size", { transform: true, iconRotate: sizeRot }),
+        ]),
       );
       this.emit(geom, selected ?? EMPTY_AREA);
       return;
@@ -809,10 +944,18 @@ export class SigmetDraw {
       this.adapter.setOverlay(
         "guide",
         fc([
-          lineFeature(extendLine(a.lineA.points, span * 0.06)),
-          lineFeature(extendLine(a.lineB.points, span * 0.06)),
+          lineFeature(extendLine(a.lineA.points, span * 0.06), "lineA"),
+          lineFeature(extendLine(a.lineB.points, span * 0.06), "lineB"),
         ]),
       );
+      // Scale+rotate handle over the joint envelope of both legs (like the polygon).
+      const all = [...a.lineA.points, ...a.lineB.points];
+      const sizeAt =
+        this.dragTarget === "size" && this.sizeAnchor
+          ? this.sizeAnchor
+          : this.transformRest(all, 0.18);
+      const cen = pointsMean(all);
+      const sizeRot = (Math.atan2(sizeAt.lon - cen.lon, sizeAt.lat - cen.lat) * 180) / Math.PI;
       this.adapter.setOverlay(
         "handles",
         fc([
@@ -822,6 +965,7 @@ export class SigmetDraw {
           ...a.lineB.points.map((p, i) =>
             pointFeature(p.lon, p.lat, `b${i}`, { collinear: B.collinear[i] === true }),
           ),
+          pointFeature(sizeAt.lon, sizeAt.lat, "size", { transform: true, iconRotate: sizeRot }),
         ]),
       );
       this.emit(geom, area ?? EMPTY_AREA);
@@ -849,9 +993,10 @@ export class SigmetDraw {
     }
 
     if (a.kind === "polygon") {
-      const [minLon, minLat, maxLon, maxLat] = this.firBbox;
-      const tol = Math.max(maxLon - minLon, maxLat - minLat) * 0.015;
       // Collinear vertices are redundant → dropped from the TAC/area, greyed out.
+      // Tolerance scales with the polygon (not the FIR span) so a small polygon
+      // doesn't see all its vertices as collinear and ignored.
+      const tol = pointsSpan(a.points) * 0.015;
       const { points: eff, collinear } = collapseRing(a.points, tol);
       const geom = { kind: "polygon" as const, points: eff };
       // Handles may be dragged outside the FIR, but the filled area is clipped to it.
@@ -863,13 +1008,31 @@ export class SigmetDraw {
       this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
       this.adapter.setOverlay("other", EMPTY);
       this.adapter.setOverlay("guide", EMPTY);
+      // Move handle (centroid) + uniform-scale handle (top-right bbox corner) so
+      // the whole shape can be dragged / resized without touching all 7 vertices.
+      const cen = pointsMean(a.points);
+      // While spinning/scaling, the handle rides its remembered material spot;
+      // otherwise it sits at the top-right bbox corner.
+      const [, , bxMaxLon, bxMaxLat] = pointsBbox(a.points);
+      const sizeAt =
+        this.dragTarget === "size" && this.sizeAnchor
+          ? this.sizeAnchor
+          : { lon: bxMaxLon, lat: bxMaxLat };
       this.adapter.setOverlay(
         "handles",
-        fc(
-          a.points.map((p, i) =>
+        fc([
+          ...a.points.map((p, i) =>
             pointFeature(p.lon, p.lat, `v${i}`, { collinear: collinear[i] === true }),
           ),
-        ),
+          pointFeature(cen.lon, cen.lat, "move", { move: true }),
+          pointFeature(sizeAt.lon, sizeAt.lat, "size", {
+            control: true,
+            transform: true,
+            // Icon spins with the handle's orbit angle (centroid → handle).
+            iconRotate:
+              (Math.atan2(sizeAt.lon - cen.lon, sizeAt.lat - cen.lat) * 180) / Math.PI,
+          }),
+        ]),
       );
       this.emit(geom, area ?? EMPTY_AREA);
       return;
@@ -890,21 +1053,30 @@ export class SigmetDraw {
       const ends = eff.length >= 2 ? eff : a.points;
       const halfNM = a.unit === "KM" ? a.width / 2 / 1.852 : a.width / 2;
       const foot = pointAtFraction(ends, this.widthT);
-      const brg = bearingDeg(ends[0]!, ends[ends.length - 1]!) + 90 * this.widthSide;
+      const brg = bearingDeg(ends[0]!, ends[ends.length - 1]!) + this.widthAngle;
       const wh = destinationPoint(foot, halfNM, brg);
       this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
       this.adapter.setOverlay("other", EMPTY);
-      this.adapter.setOverlay(
-        "guide",
-        fc([lineFeature(a.points.map((p) => [p.lon, p.lat] as [number, number]))]),
-      );
+      this.adapter.setOverlay("guide", EMPTY); // no centreline — the filled buffer says it all
+      const cen = pointsMean(a.points);
+      // Zoom+rotate handle in a corner of the line's envelope (pushed out so it
+      // never overlaps the move/vertex handles), exactly like the polygon.
+      const sizeAt =
+        this.dragTarget === "size" && this.sizeAnchor
+          ? this.sizeAnchor
+          : this.transformRest(a.points, 0.18);
+      const sizeRot = (Math.atan2(sizeAt.lon - cen.lon, sizeAt.lat - cen.lat) * 180) / Math.PI;
       this.adapter.setOverlay(
         "handles",
         fc([
           ...a.points.map((p, i) =>
             pointFeature(p.lon, p.lat, `v${i}`, { collinear: collinear[i] === true }),
           ),
-          pointFeature(wh[0], wh[1], "w", { control: true }),
+          // Width handle = same resize glyph as the circle radius (chevrons along
+          // the perpendicular width direction, small dot).
+          pointFeature(wh[0], wh[1], "w", { resize: true, iconRotate: brg }),
+          pointFeature(sizeAt.lon, sizeAt.lat, "size", { transform: true, iconRotate: sizeRot }),
+          pointFeature(cen.lon, cen.lat, "move", { move: true }),
         ]),
       );
       this.emit(geom, area ?? EMPTY_AREA);
@@ -925,8 +1097,11 @@ export class SigmetDraw {
       this.adapter.setOverlay(
         "handles",
         fc([
-          pointFeature(a.center.lon, a.center.lat, "center"),
-          pointFeature(edge[0], edge[1], "radius", { control: true }),
+          pointFeature(a.center.lon, a.center.lat, "center", { move: true }),
+          pointFeature(edge[0], edge[1], "radius", {
+            resize: true,
+            iconRotate: this.circleBearing,
+          }),
         ]),
       );
       this.emit(a, area ?? EMPTY_AREA);
@@ -1030,20 +1205,99 @@ export class SigmetDraw {
   }
 
   /**
+   * Resting position of a transform handle: the top-right corner of the point
+   * set's envelope, pushed out by `marginFrac · span` so it sits clearly outside
+   * the geometry (and away from the move/vertex handles). 0 = on the corner.
+   */
+  private transformRest(points: LatLng[], marginFrac = 0): LatLng {
+    const [, , maxLon, maxLat] = pointsBbox(points);
+    if (marginFrac === 0) return { lon: maxLon, lat: maxLat };
+    const m = pointsSpan(points) * marginFrac;
+    return { lon: maxLon + m, lat: maxLat + m };
+  }
+
+  /** At least one point of the shape is inside the FIR (the edit-validity rule). */
+  private someInFir(points: LatLng[]): boolean {
+    return points.some((p) => this.inFir(p));
+  }
+
+  /** Pin a line's two endpoints back onto the FIR border (line-side / corridor). */
+  private snapEnds(points: LatLng[]): LatLng[] {
+    if (points.length < 2) return points;
+    const out = points.slice();
+    out[0] = this.nearestOnFir(out[0]!);
+    out[out.length - 1] = this.nearestOnFir(out[out.length - 1]!);
+    return out;
+  }
+
+  /**
+   * Translate a whole line by the cursor's *incremental* delta (no grab jump),
+   * committed only while a point stays in the FIR. `this.dragLast` tracks the
+   * previous cursor; it's always advanced so the line resumes smoothly after a
+   * blocked step.
+   */
+  private translateLine(points: LatLng[], lon: number, lat: number): LatLng[] {
+    const last = this.dragLast ?? { lat, lon };
+    const dLon = lon - last.lon;
+    const dLat = lat - last.lat;
+    this.dragLast = { lat, lon };
+    const moved = points.map((p) => ({ lon: p.lon + dLon, lat: p.lat + dLat }));
+    return this.someInFir(moved) ? moved : points;
+  }
+
+  /**
+   * Scale + rotate `points` about their centroid so the transform handle (whose
+   * live position is `this.sizeAnchor`) tracks the cursor: drag in/out scales,
+   * drag around rotates. `span` floors the scale so the shape can't collapse.
+   * Pure — returns the new points and the new handle anchor; the caller commits
+   * both only if the result is allowed (so a rejected move doesn't drift).
+   */
+  private applyTransform(
+    points: LatLng[],
+    lon: number,
+    lat: number,
+    span: number,
+  ): { points: LatLng[]; anchor: LatLng } {
+    const cen = pointsMean(points);
+    const prev = this.sizeAnchor ?? cen;
+    const r0 = Math.max(Math.hypot(prev.lon - cen.lon, prev.lat - cen.lat), 1e-9);
+    const a0 = Math.atan2(prev.lat - cen.lat, prev.lon - cen.lon);
+    const ang = Math.atan2(lat - cen.lat, lon - cen.lon);
+    const dist = Math.max(Math.hypot(lon - cen.lon, lat - cen.lat), span * 0.02);
+    const sc = dist / r0;
+    const cosA = Math.cos(ang - a0);
+    const sinA = Math.sin(ang - a0);
+    const anchor = { lon: cen.lon + dist * Math.cos(ang), lat: cen.lat + dist * Math.sin(ang) };
+    const out = points.map((p) => {
+      const dx = (p.lon - cen.lon) * sc;
+      const dy = (p.lat - cen.lat) * sc;
+      return { lon: cen.lon + dx * cosA - dy * sinA, lat: cen.lat + dx * sinA + dy * cosA };
+    });
+    return { points: out, anchor };
+  }
+
+  /**
    * Magnetically snap a dragged interior vertex onto the line through its two
    * neighbours once within tolerance — aligning a vertex "clicks" into
    * collinearity (then it's greyed out / dropped from the result).
    */
-  private snapCollinear(points: LatLng[], i: number, p: LatLng, cyclic: boolean): LatLng {
+  private snapCollinear(
+    points: LatLng[],
+    i: number,
+    p: LatLng,
+    cyclic: boolean,
+    tolOverride?: number,
+  ): LatLng {
     const n = points.length;
     const prev = cyclic ? points[(i - 1 + n) % n] : points[i - 1];
     const next = cyclic ? points[(i + 1) % n] : points[i + 1];
     if (!prev || !next) return p; // open-line endpoints don't snap
     const [minLon, minLat, maxLon, maxLat] = this.firBbox;
-    // Strictly below the collapse tolerance (0.015·span) so a snapped vertex is
-    // always then detected collinear & dropped — no "snapped but kept" gap, and
-    // no silently-dropped deliberate bend just above the threshold.
-    const tol = Math.max(maxLon - minLon, maxLat - minLat) * 0.01;
+    // Strictly below the collapse tolerance so a snapped vertex is always then
+    // detected collinear & dropped — no "snapped but kept" gap. `tolOverride`
+    // lets a small polygon use its own size instead of the FIR span (otherwise
+    // a FIR-relative tol dwarfs a tiny shape and snaps/ignores everything).
+    const tol = tolOverride ?? Math.max(maxLon - minLon, maxLat - minLat) * 0.01;
     if (perpDist(prev, p, next) >= tol) return p;
     // Project onto the prev–next SEGMENT (clamped) so the snap can't push the
     // vertex past a neighbour and self-intersect a polygon ring.
@@ -1152,12 +1406,6 @@ function extendLine(points: LatLng[], deg: number): [number, number][] {
   const pn = points[points.length - 1]!;
   const pm = points[points.length - 2]!;
   return [ext(p0, p1), ...coords, ext(pn, pm)];
-}
-
-/** Smallest absolute difference between two bearings, in degrees [0,180]. */
-function angleDiff(a: number, b: number): number {
-  const d = Math.abs((((a - b) % 360) + 360) % 360);
-  return d > 180 ? 360 - d : d;
 }
 
 function bearingDeg(from: LatLng, to: LatLng): number {
@@ -1289,6 +1537,44 @@ function pointAtFraction(points: LatLng[], t: number): LatLng {
     acc += l;
   }
   return points[points.length - 1]!;
+}
+
+/** Mean of a point set — anchor for the polygon move handle / scale centre. */
+function pointsMean(points: LatLng[]): LatLng {
+  let lon = 0;
+  let lat = 0;
+  for (const p of points) {
+    lon += p.lon;
+    lat += p.lat;
+  }
+  const n = points.length || 1;
+  return { lon: lon / n, lat: lat / n };
+}
+
+/**
+ * Characteristic size (largest bbox side) of a point set. Used for tolerances
+ * that must scale with the shape itself — a small polygon needs proportionally
+ * small snap/merge/collapse thresholds, not the FIR-span ones (which would dwarf
+ * it and fuse or drop its vertices).
+ */
+function pointsSpan(points: LatLng[]): number {
+  const [minLon, minLat, maxLon, maxLat] = pointsBbox(points);
+  return Math.max(maxLon - minLon, maxLat - minLat);
+}
+
+/** Axis-aligned bounds [minLon, minLat, maxLon, maxLat] of a point set. */
+function pointsBbox(points: LatLng[]): Bbox {
+  let minLon = Infinity;
+  let minLat = Infinity;
+  let maxLon = -Infinity;
+  let maxLat = -Infinity;
+  for (const p of points) {
+    if (p.lon < minLon) minLon = p.lon;
+    if (p.lon > maxLon) maxLon = p.lon;
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+  }
+  return [minLon, minLat, maxLon, maxLat];
 }
 
 /** Closest point on segment a–b to p (planar lon/lat, fine at FIR scale). */

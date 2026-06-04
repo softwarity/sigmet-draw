@@ -5,120 +5,105 @@
  * styling, so the look is identical whatever map engine you graft onto.
  */
 
-export interface FillStyle {
-  color: string;
+/** Filled area: `fill`+`opacity` paint the surface, `stroke`+`width` the outline. */
+export interface AreaStyle {
+  fill: string;
+  stroke: string;
+  width: number;
+  /** 0–1, applied to the fill. */
+  opacity: number;
+}
+
+/** Faint preview of the opposite side (line-side / quadrant pick surface). */
+export interface OtherStyle {
+  fill: string;
   /** 0–1. */
   opacity: number;
 }
 
-export interface LineStyle {
-  color: string;
+/**
+ * Any grab-it-by-a-dot control: vertices and the move / resize / transform /
+ * radius handles. They share one look; the smaller move/resize dot and the
+ * overlaid glyphs are derived by the adapters. (Collinear — TAC-redundant —
+ * vertices are always greyed; that's not configurable.)
+ */
+export interface IconHandleStyle {
+  fill: string;
+  stroke: string;
+  /** Outline width of the dot. */
   width: number;
-  /** Dash pattern (alternating on/off lengths). Omit for a solid line. */
-  dash?: number[];
-}
-
-export interface PointStyle {
+  /** Dot radius (px). */
   radius: number;
-  color: string;
-  strokeColor: string;
-  strokeWidth: number;
 }
 
+/** Any grab-it-by-a-line control: construction guides, meridian/parallel lines. */
+export interface LineHandleStyle {
+  stroke: string;
+  width: number;
+}
+
+/**
+ * Dynamic text on the shape (e.g. the live TAC). `width` is the max label width
+ * in px — long text wraps onto several lines. The halo thickness is derived from
+ * `size` (≈ `ceil(size/10)`), not configurable.
+ */
 export interface LabelStyle {
+  /** Text colour. */
   color: string;
+  /** Halo (outline) colour. */
+  halo: string;
+  /** Font size in px. */
   size: number;
-  haloColor: string;
-  haloWidth: number;
-  /** Vertical offset in pixels (negative lifts the text above the anchor). */
-  offsetY: number;
+  /** Max label width in px before wrapping. */
+  width: number;
 }
 
 /** Floating HTML tooltip shown on hover over the geometry. */
 export interface TooltipStyle {
-  background: string;
   color: string;
-  /** px. */
-  fontSize: number;
-  /** Any CSS padding value. */
-  padding: string;
-  /** Any CSS border-radius value. */
-  borderRadius: string;
-  /** Max width before the text wraps onto several lines (any CSS length). */
-  maxWidth: string;
+  background: string;
+  /** Font size in px. */
+  size: number;
 }
 
 export interface SigmetStyle {
-  /** The selected zone (intersection with the FIR): fill + outline. */
-  area: { fill: FillStyle; line: LineStyle };
-  /** Faint preview of the opposite side (line-side / quadrant pick surface). */
-  other: { fill: FillStyle };
-  /** Construction segments & curves (line/corridor segments, buffer centreline). */
-  guide: LineStyle;
-  /** A vertex that counts toward the TAC. */
-  vertex: PointStyle;
-  /** A vertex made redundant by collinearity — ignored in the TAC. */
-  collinearVertex: PointStyle;
-  /** The radius / width control handle. */
-  controlHandle: PointStyle;
-  /** Dynamic text shown on the shape (e.g. the live TAC). */
+  area: AreaStyle;
+  other: OtherStyle;
+  /** Vertices + move/resize/transform/radius handles (dots & glyphs). */
+  iconHandle: IconHandleStyle;
+  /** Construction guides + the draggable meridian/parallel lines. */
+  lineHandle: LineHandleStyle;
   label: LabelStyle;
-  /** Floating tooltip shown on hover over the geometry. */
   tooltip: TooltipStyle;
 }
 
 export const DEFAULT_STYLE: SigmetStyle = {
-  area: {
-    fill: { color: "#f0883e", opacity: 0.35 },
-    line: { color: "#f0883e", width: 2 },
-  },
-  other: { fill: { color: "#58a6ff", opacity: 0.08 } },
-  guide: { color: "#58a6ff", width: 4 },
-  vertex: { radius: 7, color: "#ffffff", strokeColor: "#58a6ff", strokeWidth: 2 },
-  collinearVertex: { radius: 7, color: "#8b949e", strokeColor: "#8b949e", strokeWidth: 2 },
-  controlHandle: { radius: 8, color: "#58a6ff", strokeColor: "#ffffff", strokeWidth: 2 },
-  label: { color: "#ffffff", size: 13, haloColor: "#0b1622", haloWidth: 2, offsetY: -14 },
-  tooltip: {
-    background: "#0b1622",
-    color: "#e6edf3",
-    fontSize: 12,
-    padding: "3px 7px",
-    borderRadius: "4px",
-    maxWidth: "260px",
-  },
+  area: { fill: "#f0883e", stroke: "#f0883e", width: 2, opacity: 0.35 },
+  other: { fill: "#58a6ff", opacity: 0.08 },
+  iconHandle: { fill: "#ffffff", stroke: "#58a6ff", width: 2, radius: 7 },
+  lineHandle: { stroke: "#58a6ff", width: 4 },
+  label: { color: "#ffffff", halo: "#0b1622", size: 13, width: 180 },
+  tooltip: { color: "#e6edf3", background: "#0b1622", size: 12 },
 };
 
 /** A partial, deeply-optional override of {@link SigmetStyle}. */
 export interface SigmetStyleInput {
-  area?: { fill?: Partial<FillStyle>; line?: Partial<LineStyle> };
-  other?: { fill?: Partial<FillStyle> };
-  guide?: Partial<LineStyle>;
-  vertex?: Partial<PointStyle>;
-  collinearVertex?: Partial<PointStyle>;
-  controlHandle?: Partial<PointStyle>;
+  area?: Partial<AreaStyle>;
+  other?: Partial<OtherStyle>;
+  iconHandle?: Partial<IconHandleStyle>;
+  lineHandle?: Partial<LineHandleStyle>;
   label?: Partial<LabelStyle>;
   tooltip?: Partial<TooltipStyle>;
-}
-
-/** Merge a line style, cloning the `dash` array so it isn't shared with the caller. */
-function mergeLine(base: LineStyle, over?: Partial<LineStyle>): LineStyle {
-  const merged = { ...base, ...over };
-  return merged.dash ? { ...merged, dash: [...merged.dash] } : merged;
 }
 
 /** Merge a partial override onto a resolved base style (one level of nesting). */
 export function mergeStyle(base: SigmetStyle, override?: SigmetStyleInput): SigmetStyle {
   if (!override) return base;
   return {
-    area: {
-      fill: { ...base.area.fill, ...override.area?.fill },
-      line: mergeLine(base.area.line, override.area?.line),
-    },
-    other: { fill: { ...base.other.fill, ...override.other?.fill } },
-    guide: mergeLine(base.guide, override.guide),
-    vertex: { ...base.vertex, ...override.vertex },
-    collinearVertex: { ...base.collinearVertex, ...override.collinearVertex },
-    controlHandle: { ...base.controlHandle, ...override.controlHandle },
+    area: { ...base.area, ...override.area },
+    other: { ...base.other, ...override.other },
+    iconHandle: { ...base.iconHandle, ...override.iconHandle },
+    lineHandle: { ...base.lineHandle, ...override.lineHandle },
     label: { ...base.label, ...override.label },
     tooltip: { ...base.tooltip, ...override.tooltip },
   };
@@ -149,4 +134,59 @@ export function rgba(color: string, opacity: number): string {
     return color; // not a parseable hex — pass through (opacity not applied)
   }
   return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
+
+/**
+ * SVG (as a data URI) for the polygon/circle/buffer **move** handle: a ring of
+ * four chevrons pointing outward (N/E/S/W) around the centre dot, signalling
+ * "drag to move the whole shape". The centre is left empty so the handle's own
+ * dot shows through. `color` themes the chevrons (defaults to the control blue).
+ */
+export function moveIconDataUri(color = "#58a6ff"): string {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">` +
+    `<g fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
+    `<polyline points="11,9 14,4 17,9"/>` + // up
+    `<polyline points="11,19 14,24 17,19"/>` + // down
+    `<polyline points="9,11 4,14 9,17"/>` + // left
+    `<polyline points="19,11 24,14 19,17"/>` + // right
+    `</g></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * SVG (as a data URI) for a **resize** handle: two radial chevrons — one toward
+ * the shape's centre, one to the exterior (the handle is icon-rotated so they
+ * align with the centre→handle line). Same chevrons as the transform glyph, but
+ * without the rotation arc. `color` themes the strokes.
+ */
+export function resizeIconDataUri(color = "#58a6ff"): string {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">` +
+    `<g fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
+    `<polyline points="12,8 15,5 18,8"/>` + // exterior chevron
+    `<polyline points="12,22 15,25 18,22"/>` + // centre chevron
+    `</g></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * SVG (as a data URI) for the polygon **transform** handle: two opposite corner
+ * brackets (resize) around a curved double-headed arrow (rotate) — the handle
+ * scales *and* spins the ring. `color` themes the strokes.
+ */
+export function transformIconDataUri(color = "#58a6ff"): string {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30">` +
+    `<g fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` +
+    // rotation arc with an arrowhead at each end (do not touch)
+    `<path d="M8,16 Q15,8 22,16"/>` +
+    `<polyline points="8,12 8,16 12,16"/>` + // left arc head
+    `<polyline points="18,16 22,16 22,12"/>` + // right arc head
+    // resize chevrons along the radial axis: the icon spins so this maps to the
+    // centroid→handle line — top points to the exterior, bottom toward the centre.
+    `<polyline points="12,8 15,5 18,8"/>` + // exterior chevron
+    `<polyline points="12,22 15,25 18,22"/>` + // centre chevron
+    `</g></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }

@@ -25,9 +25,10 @@ export { DEFAULT_STYLE, mergeStyle, rgba } from "./map/style.js";
 export type {
   SigmetStyle,
   SigmetStyleInput,
-  FillStyle,
-  LineStyle,
-  PointStyle,
+  AreaStyle,
+  OtherStyle,
+  IconHandleStyle,
+  LineHandleStyle,
   LabelStyle,
   TooltipStyle,
 } from "./map/style.js";

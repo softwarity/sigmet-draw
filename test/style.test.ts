@@ -23,33 +23,36 @@ describe("mergeStyle", () => {
     expect(mergeStyle(DEFAULT_STYLE)).toEqual(DEFAULT_STYLE);
   });
 
-  it("deep-merges a partial area override, keeping siblings", () => {
-    const s = mergeStyle(DEFAULT_STYLE, { area: { fill: { color: "#e11d48" } } });
-    expect(s.area.fill.color).toBe("#e11d48");
-    expect(s.area.fill.opacity).toBe(DEFAULT_STYLE.area.fill.opacity);
-    expect(s.area.line).toEqual(DEFAULT_STYLE.area.line);
-    expect(s.guide).toEqual(DEFAULT_STYLE.guide);
+  it("merges a partial area override, keeping siblings", () => {
+    const s = mergeStyle(DEFAULT_STYLE, { area: { fill: "#e11d48" } });
+    expect(s.area.fill).toBe("#e11d48");
+    expect(s.area.opacity).toBe(DEFAULT_STYLE.area.opacity);
+    expect(s.area.stroke).toBe(DEFAULT_STYLE.area.stroke);
+    expect(s.lineHandle).toEqual(DEFAULT_STYLE.lineHandle);
   });
 
   it("overrides flat tokens partially", () => {
-    const s = mergeStyle(DEFAULT_STYLE, { guide: { width: 9 }, vertex: { color: "#000000" } });
-    expect(s.guide.width).toBe(9);
-    expect(s.guide.color).toBe(DEFAULT_STYLE.guide.color);
-    expect(s.vertex.color).toBe("#000000");
-    expect(s.vertex.radius).toBe(DEFAULT_STYLE.vertex.radius);
+    const s = mergeStyle(DEFAULT_STYLE, {
+      lineHandle: { width: 9 },
+      iconHandle: { fill: "#000000" },
+    });
+    expect(s.lineHandle.width).toBe(9);
+    expect(s.lineHandle.stroke).toBe(DEFAULT_STYLE.lineHandle.stroke);
+    expect(s.iconHandle.fill).toBe("#000000");
+    expect(s.iconHandle.radius).toBe(DEFAULT_STYLE.iconHandle.radius);
   });
 
   it("does not mutate the base style", () => {
     const before = JSON.stringify(DEFAULT_STYLE);
-    mergeStyle(DEFAULT_STYLE, { label: { size: 99 }, area: { fill: { opacity: 0.9 } } });
+    mergeStyle(DEFAULT_STYLE, { label: { size: 99 }, area: { opacity: 0.9 } });
     expect(JSON.stringify(DEFAULT_STYLE)).toBe(before);
   });
 
-  it("deep-merges a partial tooltip override, keeping siblings", () => {
-    const s = mergeStyle(DEFAULT_STYLE, { tooltip: { fontSize: 20 } });
-    expect(s.tooltip.fontSize).toBe(20);
+  it("merges a partial tooltip override, keeping siblings", () => {
+    const s = mergeStyle(DEFAULT_STYLE, { tooltip: { size: 20 } });
+    expect(s.tooltip.size).toBe(20);
     expect(s.tooltip.background).toBe(DEFAULT_STYLE.tooltip.background);
-    expect(s.tooltip.maxWidth).toBe(DEFAULT_STYLE.tooltip.maxWidth);
+    expect(s.tooltip.color).toBe(DEFAULT_STYLE.tooltip.color);
   });
 
   it("keeps the default tooltip when no override is given", () => {

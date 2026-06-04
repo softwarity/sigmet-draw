@@ -45,14 +45,23 @@ ${labelFn}  label: (r) => r.tac,
 ${tooltipFn}  tooltip: (r) => r.tac,   // floating tooltip on hover over the geometry
   nauticalMilesOnly: ${nmOnly},
   style: {
-${area}    area: { fill: { color: "${areaColor}", opacity: ${areaOpacity} },
-${area}      line: { color: "${areaLineColor}", width: ${areaLineWidth} } },
-${guide}    guide: { color: "${guideColor}", width: ${guideWidth} },
-${vertex}    vertex: { color: "${vertexColor}" },
-${collinear}    collinearVertex: { color: "${collinearColor}" },
-${control}    controlHandle: { color: "${controlColor}" },
-${label}    label: { color: "${labelColor}", size: ${labelSize} },
-${tooltip}    tooltip: { color: "${tipColor}", background: "${tipBg}", maxWidth: "${tipW}px" },
+${area}    area: {                          // selected zone: fill + outline
+      fill: "${areaColor}", opacity: ${areaOpacity},
+      stroke: "${areaLineColor}", width: ${areaLineWidth},
+    },${/area}
+${guide}    lineHandle: {                    // guides + meridian/parallel lines
+      stroke: "${guideColor}", width: ${guideWidth},
+    },${/guide}
+${vertex}    iconHandle: {                    // all dot handles + glyphs (collinear pts are always grey)
+      fill: "${vertexColor}", stroke: "${controlColor}",
+    },${/vertex}
+${label}    label: {                         // on-shape text; width wraps long TAC
+      color: "${labelColor}", halo: "${labelHalo}",
+      size: ${labelSize}, width: ${labelWidth},
+    },${/label}
+${tooltip}    tooltip: {                       // floating hover bubble
+      color: "${tipColor}", background: "${tipBg}", size: ${tipSize},
+    },${/tooltip}
   },
 });
 
@@ -71,27 +80,26 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
         <code-binding key="labelFn" type="comment" value="true"></code-binding>
         <code-binding key="tooltipFn" type="comment" value="false"></code-binding>
         <code-binding key="nmOnly" type="boolean" value="false"></code-binding>
-        <code-binding key="area" type="comment" value="true"></code-binding>
-        <code-binding key="areaColor" type="color" value="#f0883e"></code-binding>
-        <code-binding key="areaOpacity" type="number" value="0.35" min="0" max="1" step="0.05"></code-binding>
-        <code-binding key="areaLineColor" type="color" value="#f0883e"></code-binding>
-        <code-binding key="areaLineWidth" type="number" value="2" min="1" max="6" step="1"></code-binding>
-        <code-binding key="guide" type="comment" value="true"></code-binding>
-        <code-binding key="guideColor" type="color" value="#58a6ff"></code-binding>
-        <code-binding key="guideWidth" type="number" value="4" min="1" max="8" step="1"></code-binding>
-        <code-binding key="vertex" type="comment" value="true"></code-binding>
-        <code-binding key="vertexColor" type="color" value="#ffffff"></code-binding>
-        <code-binding key="collinear" type="comment" value="true"></code-binding>
-        <code-binding key="collinearColor" type="color" value="#8b949e"></code-binding>
-        <code-binding key="control" type="comment" value="true"></code-binding>
-        <code-binding key="controlColor" type="color" value="#58a6ff"></code-binding>
-        <code-binding key="label" type="comment" value="true"></code-binding>
-        <code-binding key="labelColor" type="color" value="#ffffff"></code-binding>
-        <code-binding key="labelSize" type="number" value="13" min="8" max="24" step="1"></code-binding>
-        <code-binding key="tooltip" type="comment" value="true"></code-binding>
-        <code-binding key="tipColor" type="color" value="#e6edf3"></code-binding>
-        <code-binding key="tipBg" type="color" value="#0b1622"></code-binding>
-        <code-binding key="tipW" type="number" value="260" min="120" max="400" step="20"></code-binding>
+        <code-binding key="area" type="comment" value="false"></code-binding>
+        <code-binding key="areaColor" type="color" value="#e11d48"></code-binding>
+        <code-binding key="areaOpacity" type="number" value="0.3" min="0" max="1" step="0.05"></code-binding>
+        <code-binding key="areaLineColor" type="color" value="#e11d48"></code-binding>
+        <code-binding key="areaLineWidth" type="number" value="3" min="1" max="6" step="1"></code-binding>
+        <code-binding key="guide" type="comment" value="false"></code-binding>
+        <code-binding key="guideColor" type="color" value="#22d3ee"></code-binding>
+        <code-binding key="guideWidth" type="number" value="3" min="1" max="8" step="1"></code-binding>
+        <code-binding key="vertex" type="comment" value="false"></code-binding>
+        <code-binding key="vertexColor" type="color" value="#facc15"></code-binding>
+        <code-binding key="controlColor" type="color" value="#a855f7"></code-binding>
+        <code-binding key="label" type="comment" value="false"></code-binding>
+        <code-binding key="labelColor" type="color" value="#facc15"></code-binding>
+        <code-binding key="labelHalo" type="color" value="#4c1d95"></code-binding>
+        <code-binding key="labelSize" type="number" value="15" min="8" max="24" step="1"></code-binding>
+        <code-binding key="labelWidth" type="number" value="200" min="80" max="400" step="20"></code-binding>
+        <code-binding key="tooltip" type="comment" value="false"></code-binding>
+        <code-binding key="tipColor" type="color" value="#fde68a"></code-binding>
+        <code-binding key="tipBg" type="color" value="#4c1d95"></code-binding>
+        <code-binding key="tipSize" type="number" value="13" min="8" max="20" step="1"></code-binding>
       </interactive-code>
     </aside>
   </div>
@@ -166,12 +174,12 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
   <table class="ref">
     <thead><tr><th>Token</th><th>Fields</th><th>What it styles</th></tr></thead>
     <tbody>
-      <tr><td><code>area.fill</code> / <code>area.line</code></td><td><code>color, opacity</code> / <code>color, width, dash?</code></td><td>The selected zone (∩ FIR): fill + outline (the curve for circle/buffer).</td></tr>
-      <tr><td><code>other.fill</code></td><td><code>color, opacity</code></td><td>Faint preview of the opposite side (line-side / quadrant pick).</td></tr>
-      <tr><td><code>guide</code></td><td><code>color, width, dash?</code></td><td>Construction segments &amp; curves (line/corridor, buffer centreline).</td></tr>
-      <tr><td><code>vertex</code> / <code>collinearVertex</code> / <code>controlHandle</code></td><td><code>radius, color, strokeColor, strokeWidth</code></td><td>Points kept in the TAC / aligned points (ignored) / radius &amp; width handle.</td></tr>
-      <tr><td><code>label</code></td><td><code>color, size, haloColor, haloWidth, offsetY</code></td><td>On-shape text.</td></tr>
-      <tr><td><code>tooltip</code></td><td><code>background, color, fontSize, padding, borderRadius, maxWidth</code></td><td>Hover tooltip box.</td></tr>
+      <tr><td><code>area</code></td><td><code>fill, stroke, width, opacity</code></td><td>The selected zone (∩ FIR): fill + outline (the curve for circle/buffer).</td></tr>
+      <tr><td><code>other</code></td><td><code>fill, opacity</code></td><td>Faint preview of the opposite side (line-side / quadrant pick).</td></tr>
+      <tr><td><code>lineHandle</code></td><td><code>stroke, width</code></td><td>Construction guides &amp; the draggable meridian/parallel lines.</td></tr>
+      <tr><td><code>iconHandle</code></td><td><code>fill, stroke, width, radius</code></td><td>All dot handles (vertices + move/resize/transform/radius); glyphs use <code>stroke</code>. Collinear (TAC-redundant) points are always a smaller, stroke-less grey dot — not configurable.</td></tr>
+      <tr><td><code>label</code></td><td><code>color, halo, size, width</code></td><td>On-shape text. <code>width</code> = max label px (wraps onto several lines); halo thickness is derived from <code>size</code>.</td></tr>
+      <tr><td><code>tooltip</code></td><td><code>color, background, size</code></td><td>Hover tooltip box.</td></tr>
     </tbody>
   </table>
 

@@ -18,7 +18,7 @@ import OlMap from "ol/Map";
 import { fromLonLat, toLonLat } from "ol/proj";
 import OSM from "ol/source/OSM";
 import VectorSource from "ol/source/Vector";
-import { Circle as CircleStyle, Fill, Stroke, Style, Text } from "ol/style";
+import { Circle as CircleStyle, Fill, Icon, Stroke, Style, Text } from "ol/style";
 import type { StyleLike } from "ol/style/Style";
 import View from "ol/View";
 
@@ -30,53 +30,98 @@ import type {
   ToolbarItem,
   ToolbarOptions,
 } from "./adapter.js";
-import { DEFAULT_STYLE, rgba } from "./style.js";
-import type { PointStyle, SigmetStyle } from "./style.js";
+import { DEFAULT_STYLE, moveIconDataUri, resizeIconDataUri, rgba, transformIconDataUri } from "./style.js";
+import type { SigmetStyle } from "./style.js";
 import { populateToolbar } from "./toolbar.js";
 import { applyTooltipStyle } from "./tooltip.js";
 
 const OVERLAY_IDS: OverlayId[] = ["other", "area", "guide", "handles", "label"];
 
-/** A circular handle style from a {@link PointStyle} token. */
-function pointStyle(p: PointStyle): Style {
+/** A circular handle style (dot). */
+function pointStyle(fill: string, stroke: string, strokeWidth: number, radius: number): Style {
   return new Style({
     image: new CircleStyle({
-      radius: p.radius,
-      fill: new Fill({ color: p.color }),
-      stroke: new Stroke({ color: p.strokeColor, width: p.strokeWidth }),
+      radius,
+      fill: new Fill({ color: fill }),
+      stroke: new Stroke({ color: stroke, width: strokeWidth }),
     }),
   });
+}
+
+/** Smaller dot for the move/resize handles (the glyph carries the meaning). */
+const SMALL_DOT = 0.7;
+/** Vertical offset (px) lifting the label above its anchor. */
+const LABEL_OFFSET_Y = -14;
+/** Collinear (TAC-redundant) vertices are always greyed — not configurable. */
+const COLLINEAR_GREY = "#8b949e";
+
+/** Word-wrap `text` so each line fits `maxPx` at `fontPx` (OL has no native
+ *  max-width). Inserts `\n` between lines. */
+let wrapCtx: CanvasRenderingContext2D | null | undefined;
+function wrapLabel(text: string, maxPx: number, fontPx: number): string {
+  if (!text || maxPx <= 0) return text;
+  if (wrapCtx === undefined) wrapCtx = document.createElement("canvas").getContext("2d");
+  if (!wrapCtx) return text;
+  wrapCtx.font = `${fontPx}px sans-serif`;
+  const lines: string[] = [];
+  let cur = "";
+  for (const word of text.split(/\s+/)) {
+    const trial = cur ? `${cur} ${word}` : word;
+    if (cur && wrapCtx.measureText(trial).width > maxPx) {
+      lines.push(cur);
+      cur = word;
+    } else {
+      cur = trial;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines.join("\n");
 }
 
 /** Translate the engine-agnostic style into an OL style (function for handles/label). */
 function olStyleFor(id: OverlayId, s: SigmetStyle): StyleLike {
   switch (id) {
     case "other":
-      return new Style({ fill: new Fill({ color: rgba(s.other.fill.color, s.other.fill.opacity) }) });
+      return new Style({ fill: new Fill({ color: rgba(s.other.fill, s.other.opacity) }) });
     case "area":
       return new Style({
-        fill: new Fill({ color: rgba(s.area.fill.color, s.area.fill.opacity) }),
-        stroke: new Stroke({ color: s.area.line.color, width: s.area.line.width, lineDash: s.area.line.dash }),
+        fill: new Fill({ color: rgba(s.area.fill, s.area.opacity) }),
+        stroke: new Stroke({ color: s.area.stroke, width: s.area.width }),
       });
     case "guide":
-      return new Style({ stroke: new Stroke({ color: s.guide.color, width: s.guide.width, lineDash: s.guide.dash }) });
+      return new Style({ stroke: new Stroke({ color: s.lineHandle.stroke, width: s.lineHandle.width }) });
     case "handles": {
-      const vtx = pointStyle(s.vertex);
-      const coll = pointStyle(s.collinearVertex);
-      const ctrl = pointStyle(s.controlHandle);
-      return (f: FeatureLike): Style =>
-        f.get("control") ? ctrl : f.get("collinear") ? coll : vtx;
+      const ih = s.iconHandle;
+      const base = pointStyle(ih.fill, ih.stroke, ih.width, ih.radius); // vertex + control
+      // Collinear dot: grey, no stroke, a touch smaller.
+      const coll = pointStyle(COLLINEAR_GREY, COLLINEAR_GREY, 0, ih.radius * SMALL_DOT);
+      const smallDot = pointStyle(ih.fill, ih.stroke, ih.width, ih.radius * SMALL_DOT);
+      const move = [smallDot, new Style({ image: new Icon({ src: moveIconDataUri(ih.stroke) }) })];
+      const transformSrc = transformIconDataUri(ih.stroke);
+      const resizeSrc = resizeIconDataUri(ih.stroke);
+      const rot = (f: FeatureLike): number => (((f.get("iconRotate") as number) ?? 0) * Math.PI) / 180;
+      return (f: FeatureLike): Style | Style[] => {
+        if (f.get("move")) return move;
+        if (f.get("transform")) {
+          return new Style({ image: new Icon({ src: transformSrc, rotation: rot(f) }) });
+        }
+        if (f.get("resize")) {
+          return [smallDot, new Style({ image: new Icon({ src: resizeSrc, rotation: rot(f) }) })];
+        }
+        if (f.get("collinear")) return coll;
+        return base;
+      };
     }
     case "label":
       return (f: FeatureLike): Style =>
         new Style({
           text: new Text({
-            text: String(f.get("text") ?? ""),
+            text: wrapLabel(String(f.get("text") ?? ""), s.label.width, s.label.size),
             font: `${s.label.size}px sans-serif`,
-            offsetY: s.label.offsetY,
+            offsetY: LABEL_OFFSET_Y,
             textBaseline: "bottom",
             fill: new Fill({ color: s.label.color }),
-            stroke: new Stroke({ color: s.label.haloColor, width: s.label.haloWidth }),
+            stroke: new Stroke({ color: s.label.halo, width: Math.ceil(s.label.size / 10) }),
           }),
         });
   }
@@ -231,7 +276,15 @@ export class OpenLayersAdapter implements MapAdapter {
         }
         const hit = this.hitAt(evt.pixel);
         this.setCursor(
-          hit?.overlay === "handles" ? "grab" : hit?.overlay === "guide" ? "move" : "",
+          hit?.overlay === "handles"
+            ? hit.props["move"]
+              ? "move"
+              : "grab"
+            : // Only draggable guide lines (meridian/parallel — they carry a
+              // `role`) get the move cursor; construction guides don't.
+              hit?.overlay === "guide" && hit.props["role"]
+              ? "move"
+              : "",
         );
         cb({ type: "move", lngLat: { lat: lat!, lon: lon! }, ...(hit ? { hit } : {}) });
       }),
