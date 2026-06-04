@@ -2,6 +2,10 @@
 const wrap = (body: string): string =>
   `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 
+/** Filled Material-style icon (fill = currentColor) — for the 2D/3D toggle. */
+const wrapFill = (body: string): string =>
+  `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">${body}</svg>`;
+
 export const ICONS: Record<string, string> = {
   circle: wrap('<circle cx="12" cy="12" r="8"/>'),
   meridian: wrap('<line x1="12" y1="3" x2="12" y2="21"/>'),
@@ -22,6 +26,11 @@ export const ICONS: Record<string, string> = {
   tropicalCyclone: wrap('<path d="M4 5h16M6 9h12M9 13h7M12 17h2"/><path d="M13 17q1 3-1 4"/>'),
   entireFir: wrap('<rect x="3" y="4" width="18" height="16" rx="4"/>'),
   clear: wrap('<path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/>'),
-  globe: wrap('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/>'),
-  flat: wrap('<rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 10h18M9 5v14"/>'),
+  // 2D/3D toggle: Material "earth" globe (3D) ↔ the flat map-in-a-box (2D).
+  globe: wrapFill(
+    '<path d="M17.9,17.39C17.64,16.59 16.89,16 16,16H15V13A1,1 0 0,0 14,12H8V10H10A1,1 0 0,0 11,9V7H13A2,2 0 0,0 15,5V4.59C17.93,5.77 20,8.64 20,12C20,14.08 19.2,15.97 17.9,17.39M11,19.93C7.05,19.44 4,16.08 4,12C4,11.38 4.08,10.78 4.21,10.21L9,15V16A2,2 0 0,0 11,18M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>',
+  ),
+  flat: wrapFill(
+    '<path d="M5,3C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3H5M15.78,5H19V17.18C18.74,16.38 17.69,15.79 16.8,15.79H15.8V12.79A1,1 0 0,0 14.8,11.79H8.8V9.79H10.8A1,1 0 0,0 11.8,8.79V6.79H13.8C14.83,6.79 15.67,6 15.78,5M5,10.29L9.8,14.79V15.79C9.8,16.9 10.7,17.79 11.8,17.79V19H5V10.29Z"/>',
+  ),
 };

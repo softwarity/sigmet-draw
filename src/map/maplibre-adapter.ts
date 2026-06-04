@@ -24,6 +24,8 @@ const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
 /** Overlay layers this adapter owns, in draw order. */
 const LAYER_IDS = ["other-fill", "area-fill", "area-line", "guide", "handles", "handles-move", "handles-transform", "handles-resize", "label"];
+/** Handle-glyph images added to the host map — removed on teardown. */
+const ICON_IDS = ["sigmet-move", "sigmet-transform", "sigmet-resize"];
 /** Overlay sources this adapter owns. */
 const SOURCE_IDS: OverlayId[] = ["other", "area", "guide", "handles", "label"];
 type MlHandler = (e: { lngLat: { lng: number; lat: number }; point: { x: number; y: number } }) => void;
@@ -116,6 +118,8 @@ export class MapLibreAdapter implements MapAdapter {
   private tooltipEl: HTMLElement | undefined;
   /** True between pointer down and up — used to skip hit-testing during a drag. */
   private dragging = false;
+  /** Set in `destroy()` so any in-flight async icon load is dropped, not applied. */
+  private destroyed = false;
 
   constructor(opts: { map: MapLibreMap; style?: SigmetStyle }) {
     this.map = opts.map;
@@ -251,6 +255,7 @@ export class MapLibreAdapter implements MapAdapter {
 
   /** Detach everything this adapter added; never destroys the host map. */
   destroy(): void {
+    this.destroyed = true;
     const h = this.pointerHandlers;
     if (h) {
       this.map.off("mousedown", h.mousedown);
@@ -264,6 +269,7 @@ export class MapLibreAdapter implements MapAdapter {
       this.windowUp = undefined;
     }
     for (const id of LAYER_IDS) if (this.map.getLayer(id)) this.map.removeLayer(id);
+    for (const id of ICON_IDS) if (this.map.hasImage(id)) this.map.removeImage(id);
     for (const id of SOURCE_IDS) if (this.map.getSource(id)) this.map.removeSource(id);
     this.toolbarEl?.remove();
     this.toolbarEl = undefined;
@@ -317,6 +323,8 @@ export class MapLibreAdapter implements MapAdapter {
     }
     const img = new Image(30, 30);
     img.onload = (): void => {
+      // The load is async — bail if the adapter was torn down meanwhile.
+      if (this.destroyed || !this.map.getSource("handles")) return;
       if (this.map.hasImage(imageId)) this.map.updateImage(imageId, img);
       else this.map.addImage(imageId, img);
       ensureLayer();
