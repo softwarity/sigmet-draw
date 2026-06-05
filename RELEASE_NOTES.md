@@ -2,6 +2,14 @@
 
 ## 1.1.2
 
+### Fixes
+
+- **OpenLayers — dragging handles was broken**: pressing a handle/guide panned the map instead of moving the handle. OpenLayers' built-in `DragPan` listens on the viewport and is registered *before* our adapter, so it latched the pointer-down sequence before the controller could disable panning. The adapter now captures `pointerdown` in the **capture phase** and `stopPropagation()`s it when the press lands on a draggable target (`isDraggableHit` — any handle, or a guide carrying a `role`), so `DragPan` never sees it. Normal map panning and the area "flip side" click are unaffected. (MapLibre was never affected — it re-checks its drag state each move.)
+
+### Demo
+
+- The demo now loads a **random FIR** on each start (instead of always the first) to showcase varied geometries — antimeridian, holes, poles, equator…
+
 ---
 
 ## 1.1.1

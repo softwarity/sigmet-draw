@@ -174,7 +174,9 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
       group?: string;
     }[];
     this.firs.set(index);
-    this.firId.set(index[0]?.designator ?? "");
+    // Pick a random FIR on each load so the demo showcases varied geometries.
+    const pick = index.length ? index[Math.floor(Math.random() * index.length)] : undefined;
+    this.firId.set(pick?.designator ?? "");
     await this.rebuild();
   }
 

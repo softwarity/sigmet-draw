@@ -38,6 +38,13 @@ import { applyTooltipStyle } from "./tooltip.js";
 
 const OVERLAY_IDS: OverlayId[] = ["other", "area", "guide", "handles", "label"];
 
+/** True when a hit is something the user grabs to drag: any handle, or a guide
+ *  line that carries a `role` (the draggable meridian/parallel). Construction
+ *  guides (no role) and the area itself are not draggable. */
+function isDraggableHit(hit: { overlay: OverlayId; props: Record<string, unknown> }): boolean {
+  return hit.overlay === "handles" || (hit.overlay === "guide" && hit.props["role"] != null);
+}
+
 /** A circular handle style (dot). */
 function pointStyle(fill: string, stroke: string, strokeWidth: number, radius: number): Style {
   return new Style({
@@ -264,11 +271,20 @@ export class OpenLayersAdapter implements MapAdapter {
       const [lon, lat] = toLonLat(coord);
       // "up" needs no hit (the controller just clears the drag target).
       const hit = type === "down" ? this.hitAt(this.map.getEventPixel(e)) : undefined;
+      // When the press lands on a draggable handle/guide, swallow the event in
+      // the capture phase so OpenLayers' own DragPan (registered on the viewport
+      // before us) never starts a pan — disabling DragPan in the callback is too
+      // late, its down sequence is already latched. Without this the map pans
+      // instead of dragging the handle.
+      if (type === "down" && hit && isDraggableHit(hit)) {
+        e.stopPropagation();
+      }
       cb({ type, lngLat: { lat: lat!, lon: lon! }, ...(hit ? { hit } : {}) });
     };
     this.viewportPointerDown = fromDom("down");
     this.domPointerUp = fromDom("up");
-    this.map.getViewport().addEventListener("pointerdown", this.viewportPointerDown);
+    // Capture phase: run before OpenLayers' viewport pointerdown listener.
+    this.map.getViewport().addEventListener("pointerdown", this.viewportPointerDown, true);
     document.addEventListener("pointerup", this.domPointerUp);
 
     this.olKeys.push(
@@ -298,7 +314,7 @@ export class OpenLayersAdapter implements MapAdapter {
     unByKey(this.olKeys);
     this.olKeys = [];
     if (this.viewportPointerDown) {
-      this.map.getViewport().removeEventListener("pointerdown", this.viewportPointerDown);
+      this.map.getViewport().removeEventListener("pointerdown", this.viewportPointerDown, true);
       this.viewportPointerDown = undefined;
     }
     if (this.domPointerUp) {
