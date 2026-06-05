@@ -17,8 +17,10 @@ export interface AreaStyle {
 /**
  * Any grab-it-by-a-dot control: vertices and the move / resize / transform /
  * radius handles. They share one look; the smaller move/resize dot and the
- * overlaid glyphs are derived by the adapters. (Collinear — TAC-redundant —
- * vertices are always greyed; that's not configurable.)
+ * overlaid glyphs are derived by the adapters. (Vertices that don't shape the
+ * clipped area — collinear ones, or ones dragged so far outside the FIR that
+ * removing them can't move the cut — are dropped from the TAC and greyed; that's
+ * not configurable.)
  */
 export interface IconHandleStyle {
   fill: string;

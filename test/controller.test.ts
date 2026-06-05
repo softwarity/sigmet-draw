@@ -89,6 +89,32 @@ describe("SigmetDraw controller", () => {
     expect(mean.lon / g.points.length).toBeCloseTo(7, 5);
   });
 
+  it("greys a vertex that becomes collinear because *another* vertex was moved", async () => {
+    await sigmet.ready();
+    // v1 starts off the v0–v2 line. Dragging the endpoint v2 onto that line (so
+    // v0–v1–v2 align) must drop v1 — the whole ring is re-evaluated, not just the
+    // dragged vertex.
+    sigmet.load({
+      kind: "polygon",
+      points: [
+        { lat: 2, lon: 2 }, // v0
+        { lat: 3, lon: 5 }, // v1 (will become collinear)
+        { lat: 2, lon: 8 }, // v2 (endpoint we move)
+        { lat: 8, lon: 5 }, // v3
+      ],
+    });
+    const handle = (role: string): Feature | undefined =>
+      (adapter.overlays.handles?.features ?? []).find((f) => f.properties?.["role"] === role);
+    expect(handle("v1")?.properties?.["collinear"]).toBe(false); // not yet aligned
+    // Move v2 to (lat 4, lon 8): now v0(2,2)–v1(3,5)–v2(4,8) are collinear.
+    adapter.send("down", 2, 8, "v2");
+    adapter.send("move", 4, 8, "v2");
+    adapter.send("up", 4, 8);
+    expect(handle("v1")?.properties?.["collinear"]).toBe(true); // greyed
+    const g = last as Extract<SigmetGeometry, { kind: "polygon" }>;
+    expect(g.points).toHaveLength(3); // v1 dropped from the TAC
+  });
+
   it("rejects merging a polygon vertex onto its neighbour", async () => {
     await sigmet.ready();
     sigmet.polygon();
@@ -132,6 +158,31 @@ describe("SigmetDraw controller", () => {
 
     sigmet.setReadonly(false);
     expect((adapter.overlays.handles?.features ?? []).length).toBeGreaterThan(0); // back
+  });
+
+  it("drops an out-of-FIR apex whose triangle can't touch the clip, keeps the boundary corners", () => {
+    // v2 is a spike far north of the FIR (lat 18, FIR lat ≤ 10): the triangle
+    // v1–v2–v3 lies entirely above the FIR, so removing v2 can't move the cut →
+    // it's dropped & greyed. v1/v3 sit between an inside and an outside vertex —
+    // their triangles dip into the FIR, so they stay (they shape the clip).
+    sigmet.load({
+      kind: "polygon",
+      points: [
+        { lat: 5, lon: 2 }, // v0 inside
+        { lat: 13, lon: 2 }, // v1 outside (boundary corner)
+        { lat: 18, lon: 5 }, // v2 outside (apex — clip-irrelevant)
+        { lat: 13, lon: 8 }, // v3 outside (boundary corner)
+        { lat: 5, lon: 8 }, // v4 inside
+      ],
+    });
+    const handle = (role: string): Feature | undefined =>
+      (adapter.overlays.handles?.features ?? []).find((f) => f.properties?.["role"] === role);
+    expect(handle("v2")?.properties?.["collinear"]).toBe(true); // greyed (dropped)
+    expect(handle("v1")?.properties?.["collinear"]).toBe(false);
+    expect(handle("v3")?.properties?.["collinear"]).toBe(false);
+    // v2 is dropped from the emitted geometry; the clip-relevant vertices remain.
+    const g = last as Extract<SigmetGeometry, { kind: "polygon" }>;
+    expect(g.points).toHaveLength(4);
   });
 
   it("unwraps a loaded geometry into an antimeridian FIR's 0..360 frame", () => {

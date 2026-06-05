@@ -49,13 +49,13 @@ import {
 } from "./geo.js";
 import {
   collapseCollinear,
-  collapseRing,
   KM_PER_NM,
   lineMoveValid,
   lineUsable,
   perpDist,
   radiusFor,
   ringMoveValid,
+  segmentsCross,
   widthFor,
 } from "./geometry.js";
 import { DEFAULT_STYLE, mergeStyle } from "./style.js";
@@ -164,6 +164,18 @@ const ringCentroid = (ring: Position[]): { x: number; y: number; area: number } 
   }
   a *= 0.5;
   return { x: cx / (6 * a), y: cy / (6 * a), area: Math.abs(a) };
+};
+
+/** True if `q` lies inside (or on) the triangle `a`–`b`–`c` (orientation test). */
+const pointInTriangle = (q: LatLng, a: LatLng, b: LatLng, c: LatLng): boolean => {
+  const side = (p: LatLng, r: LatLng): number =>
+    (q.lon - r.lon) * (p.lat - r.lat) - (p.lon - r.lon) * (q.lat - r.lat);
+  const d1 = side(a, b);
+  const d2 = side(b, c);
+  const d3 = side(c, a);
+  const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+  const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+  return !(hasNeg && hasPos);
 };
 
 /** True if the area has at least one polygon ring to hit-test against. */
@@ -736,7 +748,7 @@ export class SigmetDraw {
               // drag in/out scales, drag around rotates. Committed only while at
               // least one vertex stays in the FIR (so it can't be flung fully out).
               const span = Math.max(maxLon - minLon, maxLat - minLat);
-              if (!this.sizeAnchor) this.sizeAnchor = this.transformRest(a.points);
+              if (!this.sizeAnchor) this.sizeAnchor = this.transformRest(a.points, 0.18);
               const next = this.applyTransform(a.points, lon, lat, span);
               if (this.someInFir(next.points)) {
                 a.points = next.points;
@@ -750,7 +762,7 @@ export class SigmetDraw {
               // otherwise a small polygon's vertices all fall within the (huge)
               // FIR-relative thresholds and get fused / dropped.
               const pspan = pointsSpan(a.points);
-              const cand = this.snapCollinear(a.points, i, { lat, lon }, true, pspan * 0.01);
+              const cand = this.snapCollinear(a.points, i, { lat, lon }, true, pspan * 0.02);
               // A vertex moves only on its two adjacent edges: it can't merge with
               // another point, land on a segment, or cross the ring. The vertex
               // gap (~collapse tol) keeps two points from ever grouping; the edge
@@ -1060,11 +1072,38 @@ export class SigmetDraw {
     }
 
     if (a.kind === "polygon") {
-      // Collinear vertices are redundant → dropped from the TAC/area, greyed out.
-      // Tolerance scales with the polygon (not the FIR span) so a small polygon
-      // doesn't see all its vertices as collinear and ignored.
-      const tol = pointsSpan(a.points) * 0.015;
-      const { points: eff, collinear } = collapseRing(a.points, tol);
+      // Minimise the TAC point count while keeping the *clipped* area identical:
+      // greedily drop a vertex whenever removing it can't move the cut — i.e. the
+      // triangle it forms with its current neighbours is either near-flat (the
+      // outline shifts by < tol, so the area barely changes) or doesn't overlap
+      // the FIR at all. One rule captures every case: collinear vertices (whoever
+      // moved to align them — the whole ring is re-evaluated each frame), runs
+      // dragged well outside the FIR, while genuine FIR-boundary corners and
+      // interior corners are kept. Dropped vertices are greyed; the rest editable.
+      const tol = pointsSpan(a.points) * 0.02;
+      const n = a.points.length;
+      const keep = a.points.map(() => true);
+      const kept = (): number => keep.reduce((s, k) => s + (k ? 1 : 0), 0);
+      const step = (i: number, d: 1 | -1): number => {
+        let j = (i + d + n) % n;
+        while (!keep[j] && j !== i) j = (j + d + n) % n;
+        return j;
+      };
+      let changed = true;
+      while (changed && kept() > 3) {
+        changed = false;
+        for (let i = 0; i < n && kept() > 3; i++) {
+          if (!keep[i]) continue;
+          const A = a.points[step(i, -1)]!;
+          const C = a.points[step(i, 1)]!;
+          if (this.triangleClearOfFir(A, a.points[i]!, C, tol)) {
+            keep[i] = false;
+            changed = true;
+          }
+        }
+      }
+      const ignored = a.points.map((_, i) => !keep[i]);
+      const eff = a.points.filter((_, i) => keep[i]);
       const geom = { kind: "polygon" as const, points: eff };
       // Handles may be dragged outside the FIR, but the filled area is clipped to it.
       const area = this.areaOrNull(geom, {
@@ -1075,21 +1114,23 @@ export class SigmetDraw {
       this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
       this.adapter.setOverlay("other", EMPTY);
       this.adapter.setOverlay("guide", EMPTY);
-      // Move handle (centroid) + uniform-scale handle (top-right bbox corner) so
-      // the whole shape can be dragged / resized without touching all 7 vertices.
+      // Move handle (centroid) + uniform-scale handle just outside the top-right
+      // bbox corner so the whole shape can be dragged / resized without touching
+      // all 7 vertices.
       const cen = pointsMean(a.points);
       // While spinning/scaling, the handle rides its remembered material spot;
-      // otherwise it sits at the top-right bbox corner.
-      const [, , bxMaxLon, bxMaxLat] = pointsBbox(a.points);
+      // otherwise it rests just *outside* the bbox corner (pushed out by a margin)
+      // so it can never sit on top of a vertex — dragging a vertex towards it just
+      // grows the bbox and the handle keeps clear.
       const sizeAt =
         this.dragTarget === "size" && this.sizeAnchor
           ? this.sizeAnchor
-          : { lon: bxMaxLon, lat: bxMaxLat };
+          : this.transformRest(a.points, 0.18);
       this.adapter.setOverlay(
         "handles",
         fc([
           ...a.points.map((p, i) =>
-            pointFeature(p.lon, p.lat, `v${i}`, { collinear: collinear[i] === true }),
+            pointFeature(p.lon, p.lat, `v${i}`, { collinear: ignored[i] === true }),
           ),
           pointFeature(cen.lon, cen.lat, "move", { move: true }),
           pointFeature(sizeAt.lon, sizeAt.lat, "size", {
@@ -1269,6 +1310,56 @@ export class SigmetDraw {
 
   private inFir(p: LatLng): boolean {
     return booleanPointInPolygon([p.lon, p.lat], this.firFeature);
+  }
+
+  /**
+   * True when dropping a vertex barely affects the clip, so it can be removed from
+   * the TAC. Two safe cases: (1) the triangle `a`–`p`–`c` is near-flat — `p` lies
+   * within `tol` of the `a`–`c` chord, so removing it shifts the outline by < tol
+   * (negligible area change, FIR or not); (2) the triangle doesn't overlap the FIR
+   * at all, so the cut can't move. Genuine corners whose triangle dips into the
+   * FIR are kept.
+   */
+  private triangleClearOfFir(a: LatLng, p: LatLng, c: LatLng, tol: number): boolean {
+    if (perpDist(a, p, c) < tol) return true; // near-collinear: outline shifts < tol
+    // Any triangle corner inside the FIR → they overlap, keep the vertex.
+    if (this.inFir(a) || this.inFir(p) || this.inFir(c)) return false;
+    const minLon = Math.min(a.lon, p.lon, c.lon);
+    const maxLon = Math.max(a.lon, p.lon, c.lon);
+    const minLat = Math.min(a.lat, p.lat, c.lat);
+    const maxLat = Math.max(a.lat, p.lat, c.lat);
+    const tri: [LatLng, LatLng, LatLng] = [a, p, c];
+    for (const ring of this.firRingList) {
+      for (let k = 0; k < ring.length; k++) {
+        const [lon, lat] = ring[k]!;
+        const q1: LatLng = { lon, lat };
+        // A FIR vertex inside the triangle → overlap (bbox pre-filtered).
+        if (
+          lon >= minLon &&
+          lon <= maxLon &&
+          lat >= minLat &&
+          lat <= maxLat &&
+          pointInTriangle(q1, a, p, c)
+        ) {
+          return false;
+        }
+        // A FIR edge crossing any triangle edge → overlap (bbox pre-filtered).
+        const nxt = ring[(k + 1) % ring.length]!;
+        const q2: LatLng = { lon: nxt[0], lat: nxt[1] };
+        if (
+          Math.max(q1.lon, q2.lon) < minLon ||
+          Math.min(q1.lon, q2.lon) > maxLon ||
+          Math.max(q1.lat, q2.lat) < minLat ||
+          Math.min(q1.lat, q2.lat) > maxLat
+        ) {
+          continue;
+        }
+        for (let e = 0; e < 3; e++) {
+          if (segmentsCross(tri[e]!, tri[(e + 1) % 3]!, q1, q2)) return false;
+        }
+      }
+    }
+    return true;
   }
 
   /**

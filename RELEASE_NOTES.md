@@ -2,6 +2,15 @@
 
 ## 1.1.3
 
+### Features
+
+- **Polygon — minimal TAC, exact clip**: redundant polygon vertices are now dropped from the TAC (and greyed) by a single geometric rule — a vertex is dropped **iff the triangle it forms with its current neighbours doesn't overlap the FIR**, so removing it provably can't move the clipped area. This unifies collinear vertices (flat triangle), runs dragged well outside the FIR (triangle outside it), and keeps every genuine FIR-boundary corner and interior vertex (their triangle dips into the FIR). Result: the fewest points needed to describe the cut, with the clipped area unchanged — no collapse, no over-simplification to a triangle. Replaces the previous distance-tolerance (Douglas-Peucker) collinear pass for polygons.
+
+### Fixes
+
+- **Polygon transform handle never hides a vertex**: the polygon's scale/rotate handle now rests just *outside* the bounding box (like the line/corridor/buffer handles) instead of on the corner, so it can't end up on top of a vertex (which made that vertex impossible to grab). Dragging a vertex towards it simply grows the box and the handle keeps clear.
+- **Collinearity detected for any aligned vertex, not just the dragged one**: the polygon's TAC-minimisation rule now drops a vertex when its triangle with its neighbours is *near-flat* (within `0.02·span`), re-evaluating the whole ring every frame. So aligning a vertex by moving one of its **neighbours** (e.g. an endpoint) greys/drops the now-collinear middle vertex too — previously only the actively-dragged vertex was snapped. The drag-time snap capture was likewise widened to `0.02·span` (more magnetic).
+
 ---
 
 ## 1.1.2
