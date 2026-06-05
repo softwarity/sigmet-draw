@@ -23,6 +23,7 @@ import type { StyleLike } from "ol/style/Style";
 import View from "ol/View";
 
 import type { LatLng } from "../core/index.js";
+import { cursorForHit } from "./adapter.js";
 import type {
   MapAdapter,
   OverlayId,
@@ -54,6 +55,10 @@ const SMALL_DOT = 0.7;
 const LABEL_OFFSET_Y = -14;
 /** Collinear (TAC-redundant) vertices are always greyed — not configurable. */
 const COLLINEAR_GREY = "#8b949e";
+/** The `other` overlay is an invisible click surface (flip side / pick quadrant)
+ *  — a faint, non-styleable fill. */
+const OTHER_FILL = "#58a6ff";
+const OTHER_OPACITY = 0.08;
 
 /** Word-wrap `text` so each line fits `maxPx` at `fontPx` (OL has no native
  *  max-width). Inserts `\n` between lines. */
@@ -82,7 +87,7 @@ function wrapLabel(text: string, maxPx: number, fontPx: number): string {
 function olStyleFor(id: OverlayId, s: SigmetStyle): StyleLike {
   switch (id) {
     case "other":
-      return new Style({ fill: new Fill({ color: rgba(s.other.fill, s.other.opacity) }) });
+      return new Style({ fill: new Fill({ color: rgba(OTHER_FILL, OTHER_OPACITY) }) });
     case "area":
       return new Style({
         fill: new Fill({ color: rgba(s.area.fill, s.area.opacity) }),
@@ -245,7 +250,7 @@ export class OpenLayersAdapter implements MapAdapter {
     this.dragPan?.setActive(enabled);
   }
 
-  setCursor(cursor: string): void {
+  private setCursor(cursor: string): void {
     const el = this.map.getTargetElement();
     if (el) el.style.cursor = cursor;
   }
@@ -275,17 +280,7 @@ export class OpenLayersAdapter implements MapAdapter {
           return;
         }
         const hit = this.hitAt(evt.pixel);
-        this.setCursor(
-          hit?.overlay === "handles"
-            ? hit.props["move"]
-              ? "move"
-              : "grab"
-            : // Only draggable guide lines (meridian/parallel — they carry a
-              // `role`) get the move cursor; construction guides don't.
-              hit?.overlay === "guide" && hit.props["role"]
-              ? "move"
-              : "",
-        );
+        this.setCursor(cursorForHit(hit));
         cb({ type: "move", lngLat: { lat: lat!, lon: lon! }, ...(hit ? { hit } : {}) });
       }),
       this.map.on("singleclick", (evt) => {

@@ -14,13 +14,6 @@ export interface AreaStyle {
   opacity: number;
 }
 
-/** Faint preview of the opposite side (line-side / quadrant pick surface). */
-export interface OtherStyle {
-  fill: string;
-  /** 0–1. */
-  opacity: number;
-}
-
 /**
  * Any grab-it-by-a-dot control: vertices and the move / resize / transform /
  * radius handles. They share one look; the smaller move/resize dot and the
@@ -68,10 +61,9 @@ export interface TooltipStyle {
 
 export interface SigmetStyle {
   area: AreaStyle;
-  other: OtherStyle;
   /** Vertices + move/resize/transform/radius handles (dots & glyphs). */
   iconHandle: IconHandleStyle;
-  /** Construction guides + the draggable meridian/parallel lines. */
+  /** The draggable meridian/parallel lines. */
   lineHandle: LineHandleStyle;
   label: LabelStyle;
   tooltip: TooltipStyle;
@@ -79,7 +71,6 @@ export interface SigmetStyle {
 
 export const DEFAULT_STYLE: SigmetStyle = {
   area: { fill: "#f0883e", stroke: "#f0883e", width: 2, opacity: 0.35 },
-  other: { fill: "#58a6ff", opacity: 0.08 },
   iconHandle: { fill: "#ffffff", stroke: "#58a6ff", width: 2, radius: 7 },
   lineHandle: { stroke: "#58a6ff", width: 4 },
   label: { color: "#ffffff", halo: "#0b1622", size: 13, width: 180 },
@@ -89,7 +80,6 @@ export const DEFAULT_STYLE: SigmetStyle = {
 /** A partial, deeply-optional override of {@link SigmetStyle}. */
 export interface SigmetStyleInput {
   area?: Partial<AreaStyle>;
-  other?: Partial<OtherStyle>;
   iconHandle?: Partial<IconHandleStyle>;
   lineHandle?: Partial<LineHandleStyle>;
   label?: Partial<LabelStyle>;
@@ -101,7 +91,6 @@ export function mergeStyle(base: SigmetStyle, override?: SigmetStyleInput): Sigm
   if (!override) return base;
   return {
     area: { ...base.area, ...override.area },
-    other: { ...base.other, ...override.other },
     iconHandle: { ...base.iconHandle, ...override.iconHandle },
     lineHandle: { ...base.lineHandle, ...override.lineHandle },
     label: { ...base.label, ...override.label },

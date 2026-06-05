@@ -20,6 +20,10 @@
         }
       </select>
     </label>
+    <label class="ro" title="Freeze editing (sigmet.setReadonly)">
+      <input type="checkbox" [checked]="readonly()" (change)="toggleReadonly()" />
+      Read-only
+    </label>
   </div>
 
   <div class="stage">
@@ -166,6 +170,7 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
       <tr><td><code>firBounds()</code> / <code>firCenter()</code></td><td><code>[minLon,minLat,maxLon,maxLat]</code> / <code>LatLng</code></td><td>FIR bbox / centroid (e.g. to fit the map, or as a TC centre).</td></tr>
       <tr><td><code>setStyle(partial)</code></td><td>—</td><td>Restyle live (merged onto the current style).</td></tr>
       <tr><td><code>setLabel(fn|null)</code> / <code>setTooltip(fn|null)</code></td><td>—</td><td>Change/clear the on-shape label / hover tooltip live.</td></tr>
+      <tr><td><code>setReadonly(bool)</code> / <code>isReadonly</code></td><td>— / <code>boolean</code></td><td>Read-only mode: hides handles + toolbar and freezes editing (area + label stay). Toggle the <strong>Read-only</strong> checkbox above.</td></tr>
       <tr><td><code>ready()</code> / <code>destroy()</code></td><td><code>Promise</code> / —</td><td>Resolves once grafted / detaches (leaves the host map intact).</td></tr>
     </tbody>
   </table>
@@ -175,8 +180,7 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
     <thead><tr><th>Token</th><th>Fields</th><th>What it styles</th></tr></thead>
     <tbody>
       <tr><td><code>area</code></td><td><code>fill, stroke, width, opacity</code></td><td>The selected zone (∩ FIR): fill + outline (the curve for circle/buffer).</td></tr>
-      <tr><td><code>other</code></td><td><code>fill, opacity</code></td><td>Faint preview of the opposite side (line-side / quadrant pick).</td></tr>
-      <tr><td><code>lineHandle</code></td><td><code>stroke, width</code></td><td>Construction guides &amp; the draggable meridian/parallel lines.</td></tr>
+      <tr><td><code>lineHandle</code></td><td><code>stroke, width</code></td><td>The draggable meridian/parallel lines.</td></tr>
       <tr><td><code>iconHandle</code></td><td><code>fill, stroke, width, radius</code></td><td>All dot handles (vertices + move/resize/transform/radius); glyphs use <code>stroke</code>. Collinear (TAC-redundant) points are always a smaller, stroke-less grey dot — not configurable.</td></tr>
       <tr><td><code>label</code></td><td><code>color, halo, size, width</code></td><td>On-shape text. <code>width</code> = max label px (wraps onto several lines); halo thickness is derived from <code>size</code>.</td></tr>
       <tr><td><code>tooltip</code></td><td><code>color, background, size</code></td><td>Hover tooltip box.</td></tr>

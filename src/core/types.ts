@@ -1,6 +1,7 @@
 /**
  * The 12 SIGMET/AIRMET geometry templates (WMO-No.49 Vol II, App. 6 — the
- * "Location" element). Each is a *parametric* shape, not a free polygon: it is
+ * "Location" element) plus the tropical-cyclone circle variant (13 kinds in
+ * all). Each is a *parametric* shape, not a free polygon: it is
  * fully described by a handful of parameters plus, for half-plane forms, which
  * side is selected. The concrete area shown on the map is *derived* from these
  * parameters (see `area.ts`), and the TAC string is *serialized* from them
@@ -14,7 +15,7 @@ export type LineSide = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
 /** Distance unit as written in TAC. */
 export type DistanceUnit = "KM" | "NM";
 
-/** Discriminator for the 12 templates. */
+/** Discriminator for the 12 templates + the tropical-cyclone circle. */
 export type GeometryKind =
   | "point"
   | "parallel"

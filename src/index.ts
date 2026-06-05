@@ -26,7 +26,6 @@ export type {
   SigmetStyle,
   SigmetStyleInput,
   AreaStyle,
-  OtherStyle,
   IconHandleStyle,
   LineHandleStyle,
   LabelStyle,

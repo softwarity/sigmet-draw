@@ -22,12 +22,37 @@ import type {
 } from "geojson";
 
 import { toArea, toTAC } from "../core/index.js";
-import type { FirInput, LatLng, LineSide, SigmetGeometry } from "../core/index.js";
+import type { FirInput, LatLng, SigmetGeometry } from "../core/index.js";
 import type { MapAdapter, PointerEvent } from "./adapter.js";
+import {
+  bboxOf,
+  bearingDeg,
+  clamp,
+  crossesAntimeridian,
+  destinationPoint,
+  extendLine,
+  haversineNM,
+  midpoint,
+  oppositeSide,
+  pointAtFraction,
+  pointsBbox,
+  pointsMean,
+  pointsSpan,
+  projectFraction,
+  projectOnSegment,
+  ringsOf,
+  snapSide,
+  unwrapGeometry,
+  unwrapSigmetGeometry,
+  vertexIndex,
+  type Bbox,
+} from "./geo.js";
 import {
   collapseCollinear,
   collapseRing,
+  KM_PER_NM,
   lineMoveValid,
+  lineUsable,
   perpDist,
   radiusFor,
   ringMoveValid,
@@ -77,11 +102,9 @@ export interface SigmetResult {
   area: Feature<Polygon | MultiPolygon | Point>;
 }
 
-type Bbox = [number, number, number, number];
 /** The `role` of the handle/guide currently being dragged (e.g. "center", "lon", "north"). */
 type DragTarget = string;
 
-const EARTH_NM = 3440.065;
 const fc = (features: Feature[]): FeatureCollection => ({
   type: "FeatureCollection",
   features,
@@ -93,7 +116,6 @@ const EMPTY_AREA: Feature<Polygon> = {
   properties: {},
   geometry: { type: "Polygon", coordinates: [] },
 };
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const pointFeature = (
   lon: number,
   lat: number,
@@ -144,8 +166,6 @@ const ringCentroid = (ring: Position[]): { x: number; y: number; area: number } 
   return { x: cx / (6 * a), y: cy / (6 * a), area: Math.abs(a) };
 };
 
-/** Anchor point for the on-shape label: centroid of the area's LARGEST polygon
- *  (handles MultiPolygon from clipping); `null` for empty/degenerate geometry. */
 /** True if the area has at least one polygon ring to hit-test against. */
 const hasFill = (area: Feature<Polygon | MultiPolygon | Point>): boolean => {
   const g = area.geometry;
@@ -154,6 +174,8 @@ const hasFill = (area: Feature<Polygon | MultiPolygon | Point>): boolean => {
   return false;
 };
 
+/** Anchor point for the on-shape label: centroid of the area's LARGEST polygon
+ *  (handles MultiPolygon from clipping); `null` for empty/degenerate geometry. */
 const labelAnchor = (area: Feature<Polygon | MultiPolygon | Point>): [number, number] | null => {
   const g = area.geometry;
   if (g.type === "Point") return g.coordinates as [number, number];
@@ -189,6 +211,8 @@ export class SigmetDraw {
   /** Cursor at the previous drag step — for incremental whole-line translation. */
   private dragLast: LatLng | null = null;
   private destroyed = false;
+  /** Read-only mode: no handles, no editing, toolbar hidden. */
+  private readOnly = false;
   /** When true, radii/widths are always nautical miles (never KM). */
   private nmOnly = false;
   private _toolbar?: SigmetToolbar;
@@ -256,6 +280,26 @@ export class SigmetDraw {
     if (!tooltip) this.adapter.setTooltip(null, { lat: 0, lon: 0 });
   }
 
+  /** Whether the drawing is in read-only mode. */
+  get isReadonly(): boolean {
+    return this.readOnly;
+  }
+
+  /**
+   * Read-only (frozen) mode: hides the toolbar and every grab handle/guide, and
+   * ignores pointer editing — the area + label stay visible. Toggle freely.
+   */
+  setReadonly(on: boolean): void {
+    if (on === this.readOnly) return;
+    this.readOnly = on;
+    if (on) {
+      this.dragTarget = null; // drop any in-progress drag
+      this.adapter.setPanEnabled(true);
+    }
+    this._toolbar?.setVisible(!on);
+    this.renderActive();
+  }
+
   private applyFir(fir: FirInput): void {
     const raw: Feature<Polygon | MultiPolygon> =
       fir.type === "Feature" ? fir : { type: "Feature", properties: {}, geometry: fir };
@@ -315,7 +359,9 @@ export class SigmetDraw {
     this.circleBearing = 90;
     this.widthT = 0;
     this.widthAngle = 90;
-    this.active = geometry;
+    // Bring longitudes into the FIR working frame (matters only for an
+    // antimeridian-crossing FIR, where the controller works in 0..360).
+    this.active = unwrapSigmetGeometry(geometry, this.unwrapLon);
     this.renderActive();
   }
 
@@ -532,7 +578,7 @@ export class SigmetDraw {
   }
 
   private onPointer(ev: PointerEvent): void {
-    if (this.destroyed) return;
+    if (this.destroyed || this.readOnly) return; // read-only: ignore all editing
     const a = this.active;
     switch (ev.type) {
       case "down": {
@@ -587,10 +633,15 @@ export class SigmetDraw {
             if (t === "north") a.north = clamp(lat, a.south, maxLat);
             else if (t === "south") a.south = clamp(lat, minLat, a.north);
             break;
-          case "lonBand":
-            if (t === "west") a.west = clamp(lon, minLon, a.east);
-            else if (t === "east") a.east = clamp(lon, a.west, maxLon);
+          case "lonBand": {
+            // A `west > east` band legitimately wraps the antimeridian; don't
+            // cross-couple the bounds then (that would force west ≤ east and
+            // collapse the wrap) — clamp each only to the FIR bbox.
+            const wraps = a.west > a.east;
+            if (t === "west") a.west = clamp(lon, minLon, wraps ? maxLon : a.east);
+            else if (t === "east") a.east = clamp(lon, wraps ? minLon : a.west, maxLon);
             break;
+          }
           case "quadrant":
             if (t === "lat") a.lat = clamp(lat, minLat, maxLat);
             else if (t === "lon") a.lon = clamp(lon, minLon, maxLon);
@@ -598,21 +649,24 @@ export class SigmetDraw {
           case "lineSide": {
             const span = Math.max(maxLon - minLon, maxLat - minLat);
             if (t === "line") {
-              // Drag the whole line (translate); endpoints stay pinned to the border.
-              a.points = this.snapEnds(this.translateLine(a.points, lon, lat));
+              // Drag the whole line (translate); endpoints stay pinned to the
+              // border. Reject if the end re-snap left it degenerate/self-crossing.
+              const cand = this.snapEnds(this.translateLine(a.points, lon, lat));
+              if (lineUsable(cand, span * 0.05)) a.points = cand;
               break;
             }
             if (t === "size") {
               // Corner handle: scale + rotate the whole line about its centroid.
               if (!this.sizeAnchor) this.sizeAnchor = this.transformRest(a.points, 0.18);
               const next = this.applyTransform(a.points, lon, lat, span);
-              if (this.someInFir(next.points)) {
-                a.points = this.snapEnds(next.points);
+              const cand = this.snapEnds(next.points);
+              if (lineUsable(cand, span * 0.05)) {
+                a.points = cand;
                 this.sizeAnchor = next.anchor;
               }
               break;
             }
-            const i = Number(t.slice(1));
+            const i = vertexIndex(t);
             const cur = a.points[i];
             if (cur) {
               const isEnd = i === 0 || i === a.points.length - 1;
@@ -629,7 +683,8 @@ export class SigmetDraw {
             if (t === "lineA" || t === "lineB") {
               // Drag one whole leg (translate); endpoints stay pinned to the border.
               const line = t === "lineA" ? a.lineA : a.lineB;
-              line.points = this.snapEnds(this.translateLine(line.points, lon, lat));
+              const cand = this.snapEnds(this.translateLine(line.points, lon, lat));
+              if (lineUsable(cand, span * 0.05)) line.points = cand;
               break;
             }
             if (t === "size") {
@@ -638,15 +693,17 @@ export class SigmetDraw {
               const all = [...a.lineA.points, ...a.lineB.points];
               if (!this.sizeAnchor) this.sizeAnchor = this.transformRest(all, 0.18);
               const next = this.applyTransform(all, lon, lat, span);
-              if (this.someInFir(next.points)) {
-                a.lineA.points = this.snapEnds(next.points.slice(0, nA));
-                a.lineB.points = this.snapEnds(next.points.slice(nA));
+              const ca = this.snapEnds(next.points.slice(0, nA));
+              const cb = this.snapEnds(next.points.slice(nA));
+              if (lineUsable(ca, span * 0.05) && lineUsable(cb, span * 0.05)) {
+                a.lineA.points = ca;
+                a.lineB.points = cb;
                 this.sizeAnchor = next.anchor;
               }
               break;
             }
             const line = t[0] === "a" ? a.lineA : a.lineB;
-            const i = Number(t.slice(1));
+            const i = vertexIndex(t);
             const cur = line.points[i];
             if (cur) {
               const isEnd = i === 0 || i === line.points.length - 1;
@@ -687,7 +744,7 @@ export class SigmetDraw {
               }
               break;
             }
-            const i = Number(t.slice(1));
+            const i = vertexIndex(t);
             if (a.points[i]) {
               // Tolerances scale with the polygon's own size, not the FIR span —
               // otherwise a small polygon's vertices all fall within the (huge)
@@ -740,7 +797,7 @@ export class SigmetDraw {
               const lineBrg = bearingDeg(a.points[0]!, a.points[a.points.length - 1]!);
               this.widthAngle = bearingDeg(foot, cursor) - lineBrg;
             } else {
-              const i = Number(t.slice(1));
+              const i = vertexIndex(t);
               if (a.points[i]) {
                 const span = Math.max(maxLon - minLon, maxLat - minLat);
                 const cand = this.snapCollinear(a.points, i, { lat, lon }, false);
@@ -803,6 +860,16 @@ export class SigmetDraw {
   }
 
   private renderActive(): void {
+    this.renderShape();
+    // Disabled (read-only) mode: keep the area + label, drop every grab handle
+    // and guide so nothing looks (or is) editable. Toggling re-renders them.
+    if (this.readOnly) {
+      this.adapter.setOverlay("handles", EMPTY);
+      this.adapter.setOverlay("guide", EMPTY);
+    }
+  }
+
+  private renderShape(): void {
     const a = this.active;
     if (!a) return;
 
@@ -1051,7 +1118,7 @@ export class SigmetDraw {
       // Width handle: at fraction `widthT` along the line, on the remembered side
       // — follows the cursor while dragging, and survives vertex edits.
       const ends = eff.length >= 2 ? eff : a.points;
-      const halfNM = a.unit === "KM" ? a.width / 2 / 1.852 : a.width / 2;
+      const halfNM = a.unit === "KM" ? a.width / 2 / KM_PER_NM : a.width / 2;
       const foot = pointAtFraction(ends, this.widthT);
       const brg = bearingDeg(ends[0]!, ends[ends.length - 1]!) + this.widthAngle;
       const wh = destinationPoint(foot, halfNM, brg);
@@ -1089,7 +1156,7 @@ export class SigmetDraw {
         lonBounds: this.lonBounds,
         clipBounded: true,
       });
-      const radiusNM = a.unit === "KM" ? a.radius / 1.852 : a.radius;
+      const radiusNM = a.unit === "KM" ? a.radius / KM_PER_NM : a.radius;
       const edge = destinationPoint(a.center, radiusNM, this.circleBearing);
       this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
       this.adapter.setOverlay("other", EMPTY);
@@ -1117,7 +1184,7 @@ export class SigmetDraw {
         lonBounds: this.lonBounds,
         clipBounded: true,
       });
-      const radiusNM = a.unit === "KM" ? a.radius / 1.852 : a.radius;
+      const radiusNM = a.unit === "KM" ? a.radius / KM_PER_NM : a.radius;
       const edge = destinationPoint(a.center, radiusNM, this.circleBearing);
       this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
       this.adapter.setOverlay("other", EMPTY);
@@ -1260,7 +1327,9 @@ export class SigmetDraw {
   ): { points: LatLng[]; anchor: LatLng } {
     const cen = pointsMean(points);
     const prev = this.sizeAnchor ?? cen;
-    const r0 = Math.max(Math.hypot(prev.lon - cen.lon, prev.lat - cen.lat), 1e-9);
+    // Floor r0 at the same span fraction as `dist` so the per-frame scale can't
+    // blow up when the previous anchor happens to sit near the centroid.
+    const r0 = Math.max(Math.hypot(prev.lon - cen.lon, prev.lat - cen.lat), span * 0.02);
     const a0 = Math.atan2(prev.lat - cen.lat, prev.lon - cen.lon);
     const ang = Math.atan2(lat - cen.lat, lon - cen.lon);
     const dist = Math.max(Math.hypot(lon - cen.lon, lat - cen.lat), span * 0.02);
@@ -1355,254 +1424,4 @@ export class SigmetDraw {
     }
     return bboxCenter;
   }
-}
-
-function haversineNM(a: Position, b: Position): number {
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b[1]! - a[1]!);
-  const dLon = toRad(b[0]! - a[0]!);
-  const la1 = toRad(a[1]!);
-  const la2 = toRad(b[1]!);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
-  return 2 * EARTH_NM * Math.asin(Math.sqrt(h));
-}
-
-const DIRS: LineSide[] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-
-/** Snap a (dLon, dLat) direction to the nearest of the 8 compass `LineSide`s. */
-function snapSide(dLon: number, dLat: number): LineSide {
-  let ang = (Math.atan2(dLon, dLat) * 180) / Math.PI; // 0 = N, 90 = E
-  ang = ((ang % 360) + 360) % 360;
-  return DIRS[Math.round(ang / 45) % 8]!;
-}
-
-function oppositeSide(side: LineSide): LineSide {
-  return DIRS[(DIRS.indexOf(side) + 4) % 8]!;
-}
-
-function midpoint(points: LatLng[]): LatLng {
-  const n = points.length || 1;
-  return {
-    lat: points.reduce((s, p) => s + p.lat, 0) / n,
-    lon: points.reduce((s, p) => s + p.lon, 0) / n,
-  };
-}
-
-/** Polyline prolonged at both ends by `deg` degrees, as [lon,lat] coords — so a
- * `lineSide` is drawn as a line overshooting the FIR, not a bounded segment. */
-function extendLine(points: LatLng[], deg: number): [number, number][] {
-  const coords = points.map((p) => [p.lon, p.lat] as [number, number]);
-  if (points.length < 2) return coords;
-  const ext = (a: LatLng, b: LatLng): [number, number] => {
-    const dx = a.lon - b.lon;
-    const dy = a.lat - b.lat;
-    const len = Math.hypot(dx, dy) || 1;
-    return [a.lon + (dx / len) * deg, a.lat + (dy / len) * deg];
-  };
-  const p0 = points[0]!;
-  const p1 = points[1]!;
-  const pn = points[points.length - 1]!;
-  const pm = points[points.length - 2]!;
-  return [ext(p0, p1), ...coords, ext(pn, pm)];
-}
-
-function bearingDeg(from: LatLng, to: LatLng): number {
-  const rad = Math.PI / 180;
-  const phi1 = from.lat * rad;
-  const phi2 = to.lat * rad;
-  const dLambda = (to.lon - from.lon) * rad;
-  const y = Math.sin(dLambda) * Math.cos(phi2);
-  const x =
-    Math.cos(phi1) * Math.sin(phi2) -
-    Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLambda);
-  return Math.atan2(y, x) / rad;
-}
-
-function destinationPoint(
-  from: LatLng,
-  distanceNM: number,
-  bearingDegrees: number,
-): [number, number] {
-  const rad = Math.PI / 180;
-  const delta = distanceNM / EARTH_NM;
-  const theta = bearingDegrees * rad;
-  const phi1 = from.lat * rad;
-  const lambda1 = from.lon * rad;
-  const phi2 = Math.asin(
-    Math.sin(phi1) * Math.cos(delta) +
-      Math.cos(phi1) * Math.sin(delta) * Math.cos(theta),
-  );
-  const lambda2 =
-    lambda1 +
-    Math.atan2(
-      Math.sin(theta) * Math.sin(delta) * Math.cos(phi1),
-      Math.cos(delta) - Math.sin(phi1) * Math.sin(phi2),
-    );
-  return [lambda2 / rad, phi2 / rad];
-}
-
-/** Rewrite a geometry's longitudes through `uw` (for an unwrapped AM frame). */
-function unwrapGeometry(
-  g: Polygon | MultiPolygon,
-  uw: (lon: number) => number,
-): Polygon | MultiPolygon {
-  const ring = (r: Position[]): Position[] =>
-    r.map(([lon, lat]) => [uw(lon!), lat!] as Position);
-  return g.type === "Polygon"
-    ? { type: "Polygon", coordinates: g.coordinates.map(ring) }
-    : { type: "MultiPolygon", coordinates: g.coordinates.map((p) => p.map(ring)) };
-}
-
-function ringsOf(feature: Feature<Polygon | MultiPolygon>): [number, number][][] {
-  const polys =
-    feature.geometry.type === "Polygon"
-      ? [feature.geometry.coordinates]
-      : feature.geometry.coordinates;
-  return polys.flatMap((poly) => poly.map((ring) => ring as [number, number][]));
-}
-
-/**
- * Does the FIR cross the antimeridian? Structural test, not a bbox-width heuristic
- * (a genuinely wide non-crossing FIR can span > 180° of longitude without crossing):
- *  - split form (GeoJSON convention): the geometry touches BOTH ±180 edges;
- *  - jump form: a ring has consecutive vertices more than 180° apart in longitude.
- */
-function crossesAntimeridian(feature: Feature<Polygon | MultiPolygon>): boolean {
-  const rings = ringsOf(feature);
-  let touchesEast = false;
-  let touchesWest = false;
-  for (const ring of rings) {
-    for (let i = 0; i < ring.length; i++) {
-      const lon = ring[i]![0];
-      if (lon >= 179.5) touchesEast = true;
-      if (lon <= -179.5) touchesWest = true;
-      if (i > 0 && Math.abs(lon - ring[i - 1]![0]) > 180) return true; // jump form
-    }
-  }
-  return touchesEast && touchesWest; // split form
-}
-
-function segLengths(points: LatLng[]): { len: number[]; total: number } {
-  const len: number[] = [];
-  let total = 0;
-  for (let i = 0; i + 1 < points.length; i++) {
-    const l = Math.hypot(
-      points[i + 1]!.lon - points[i]!.lon,
-      points[i + 1]!.lat - points[i]!.lat,
-    );
-    len.push(l);
-    total += l;
-  }
-  return { len, total };
-}
-
-/** Closest point on a polyline to p, plus its fraction (0..1) along the line. */
-function projectFraction(p: LatLng, points: LatLng[]): { point: LatLng; t: number } {
-  const { len, total } = segLengths(points);
-  let best = points[0]!;
-  let bestD = Infinity;
-  let bestT = 0;
-  let acc = 0;
-  for (let i = 0; i + 1 < points.length; i++) {
-    const a = points[i]!;
-    const q = projectOnSegment(p, [a.lon, a.lat], [points[i + 1]!.lon, points[i + 1]!.lat]);
-    const d = (q.lon - p.lon) ** 2 + (q.lat - p.lat) ** 2;
-    if (d < bestD) {
-      bestD = d;
-      best = q;
-      const along = Math.hypot(q.lon - a.lon, q.lat - a.lat);
-      bestT = total > 0 ? (acc + along) / total : 0;
-    }
-    acc += len[i]!;
-  }
-  return { point: best, t: bestT };
-}
-
-/** Point at fraction `t` (0..1) along a polyline. */
-function pointAtFraction(points: LatLng[], t: number): LatLng {
-  if (points.length < 2) return points[0]!;
-  const { len, total } = segLengths(points);
-  const target = t * total;
-  let acc = 0;
-  for (let i = 0; i + 1 < points.length; i++) {
-    const l = len[i]!;
-    if (acc + l >= target || i === points.length - 2) {
-      const f = l > 0 ? (target - acc) / l : 0;
-      const a = points[i]!;
-      const b = points[i + 1]!;
-      return { lat: a.lat + (b.lat - a.lat) * f, lon: a.lon + (b.lon - a.lon) * f };
-    }
-    acc += l;
-  }
-  return points[points.length - 1]!;
-}
-
-/** Mean of a point set — anchor for the polygon move handle / scale centre. */
-function pointsMean(points: LatLng[]): LatLng {
-  let lon = 0;
-  let lat = 0;
-  for (const p of points) {
-    lon += p.lon;
-    lat += p.lat;
-  }
-  const n = points.length || 1;
-  return { lon: lon / n, lat: lat / n };
-}
-
-/**
- * Characteristic size (largest bbox side) of a point set. Used for tolerances
- * that must scale with the shape itself — a small polygon needs proportionally
- * small snap/merge/collapse thresholds, not the FIR-span ones (which would dwarf
- * it and fuse or drop its vertices).
- */
-function pointsSpan(points: LatLng[]): number {
-  const [minLon, minLat, maxLon, maxLat] = pointsBbox(points);
-  return Math.max(maxLon - minLon, maxLat - minLat);
-}
-
-/** Axis-aligned bounds [minLon, minLat, maxLon, maxLat] of a point set. */
-function pointsBbox(points: LatLng[]): Bbox {
-  let minLon = Infinity;
-  let minLat = Infinity;
-  let maxLon = -Infinity;
-  let maxLat = -Infinity;
-  for (const p of points) {
-    if (p.lon < minLon) minLon = p.lon;
-    if (p.lon > maxLon) maxLon = p.lon;
-    if (p.lat < minLat) minLat = p.lat;
-    if (p.lat > maxLat) maxLat = p.lat;
-  }
-  return [minLon, minLat, maxLon, maxLat];
-}
-
-/** Closest point on segment a–b to p (planar lon/lat, fine at FIR scale). */
-function projectOnSegment(p: LatLng, a: [number, number], b: [number, number]): LatLng {
-  const dx = b[0] - a[0];
-  const dy = b[1] - a[1];
-  const l2 = dx * dx + dy * dy || 1;
-  let t = ((p.lon - a[0]) * dx + (p.lat - a[1]) * dy) / l2;
-  t = Math.max(0, Math.min(1, t));
-  return { lon: a[0] + t * dx, lat: a[1] + t * dy };
-}
-
-function bboxOf(feature: Feature<Polygon | MultiPolygon>): Bbox {
-  let minLon = 180;
-  let minLat = 90;
-  let maxLon = -180;
-  let maxLat = -90;
-  const rings =
-    feature.geometry.type === "Polygon"
-      ? feature.geometry.coordinates
-      : feature.geometry.coordinates.flat();
-  for (const ring of rings) {
-    for (const [lon, lat] of ring as [number, number][]) {
-      if (lon < minLon) minLon = lon;
-      if (lon > maxLon) maxLon = lon;
-      if (lat < minLat) minLat = lat;
-      if (lat > maxLat) maxLat = lat;
-    }
-  }
-  return [minLon, minLat, maxLon, maxLat];
 }

@@ -6,6 +6,7 @@ import {
   perpDist,
   radiusFor,
   lineMoveValid,
+  lineUsable,
   ringMoveValid,
   segmentDistance,
   segmentsCross,
@@ -279,6 +280,41 @@ describe("ringMoveValid", () => {
       { lon: 1, lat: 2 },
     ];
     expect(ringMoveValid(tri, 2, { lon: 1, lat: -5 }, 0.01, 0.01)).toBe(true);
+  });
+});
+
+describe("lineUsable", () => {
+  it("accepts a normal spread polyline", () => {
+    const pts = [
+      { lon: 0, lat: 0 },
+      { lon: 3, lat: 1 },
+      { lon: 6, lat: 0 },
+    ];
+    expect(lineUsable(pts, 0.5)).toBe(true);
+  });
+
+  it("rejects collapsed endpoints (both snapped to the same border point)", () => {
+    const pts = [
+      { lon: 0, lat: 0 },
+      { lon: 3, lat: 2 },
+      { lon: 0.01, lat: 0.01 },
+    ];
+    expect(lineUsable(pts, 0.5)).toBe(false);
+  });
+
+  it("rejects a self-crossing (folded) polyline", () => {
+    // 4 points where edge 0–1 crosses edge 2–3.
+    const pts = [
+      { lon: 0, lat: 0 },
+      { lon: 4, lat: 4 },
+      { lon: 4, lat: 0 },
+      { lon: 0, lat: 4 },
+    ];
+    expect(lineUsable(pts, 0.5)).toBe(false);
+  });
+
+  it("rejects a <2-point line", () => {
+    expect(lineUsable([{ lon: 0, lat: 0 }], 0.5)).toBe(false);
   });
 });
 

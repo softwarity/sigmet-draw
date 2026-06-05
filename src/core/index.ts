@@ -1,8 +1,9 @@
 /**
  * @tac-sigmet/core — framework- and map-agnostic core.
  *
- * The 12 SIGMET/AIRMET geometry templates (WMO-No.49 Vol II, App. 6),
- * TAC (de)serialization, and area computation. No DOM, no map engine.
+ * The 12 SIGMET/AIRMET geometry templates (WMO-No.49 Vol II, App. 6) plus the
+ * tropical-cyclone circle variant, TAC (de)serialization, and area computation.
+ * No DOM, no map engine.
  */
 export type { LatLng } from "./coord.js";
 export {
@@ -30,6 +31,7 @@ export type {
   CorridorGeometry,
   PolygonGeometry,
   CircleGeometry,
+  TropicalCycloneGeometry,
   WideLineGeometry,
   EntireFirGeometry,
 } from "./types.js";

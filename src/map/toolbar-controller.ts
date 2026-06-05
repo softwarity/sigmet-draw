@@ -118,6 +118,15 @@ export class SigmetToolbar {
     return items;
   }
 
+  /** Show or hide the whole toolbar (used by `SigmetDraw`'s disabled mode). */
+  setVisible(visible: boolean): void {
+    if (!this.el) return;
+    // Re-apply the layout on show: it restores `display:flex` + placement, which
+    // a plain `display:none`/`""` toggle would drop (losing the bar's position).
+    if (visible) applyToolbarLayout(this.el, this.layout);
+    else this.el.style.display = "none";
+  }
+
   /** Enable/disable (grey out) the tropical-cyclone button. */
   private syncTc(): void {
     const b = this.el?.querySelector<HTMLButtonElement>('button[data-tool="tropicalCyclone"]');

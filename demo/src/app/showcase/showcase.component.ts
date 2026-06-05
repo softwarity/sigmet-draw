@@ -137,6 +137,7 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   protected readonly tacInput = signal("");
   protected readonly tacError = signal("");
   protected readonly adapterName = signal("MapLibreAdapter");
+  protected readonly readonly = signal(false);
   protected readonly mapImport = signal('import { Map } from "maplibre-gl";');
 
   /** Live style edits from the editor panel — re-applied across engine switches. */
@@ -386,11 +387,18 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
     this.updateGlobeBtn();
   }
 
-  /** Globe button shows the *target* mode: a flat-map icon in globe, a globe in 2D. */
+  /** Freeze/unfreeze editing (read-only mode) — hides handles + toolbar. */
+  protected toggleReadonly(): void {
+    this.readonly.set(!this.readonly());
+    this.sigmet?.setReadonly(this.readonly());
+  }
+
+  /** Icon shows the *current* view mode (globe in globe, flat map in 2D — like a
+   *  mute button); the tooltip carries the action. */
   private updateGlobeBtn(): void {
     const g = this.globeBtn;
     if (!g) return;
-    g.innerHTML = this.mlGlobe ? ICONS["flat"] : ICONS["globe"];
+    g.innerHTML = this.mlGlobe ? ICONS["globe"] : ICONS["flat"];
     const t = this.mlGlobe ? "Switch to Mercator" : "Switch to globe";
     g.title = t;
     g.setAttribute("aria-label", t);
@@ -515,6 +523,8 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
 
       // No real TC input here → enable the TC button with the FIR centroid.
       this.syncTcCenter();
+      // Re-apply read-only so it survives an engine/FIR switch.
+      if (this.readonly()) this.sigmet.setReadonly(true);
 
       const b = this.sigmet.firBounds();
       this.mlMap?.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 28, animate: false });

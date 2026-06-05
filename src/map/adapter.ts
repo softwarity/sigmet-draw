@@ -88,6 +88,17 @@ export interface ToolbarItem {
   onClick: () => void;
 }
 
+/**
+ * Hover cursor for a hit (shared by both adapters): `move` over a move handle or
+ * a draggable guide line (one carrying a `role`), `grab` over any other handle,
+ * none elsewhere. Construction guides (no role) are not draggable → no cursor.
+ */
+export function cursorForHit(hit: PointerEvent["hit"]): string {
+  if (hit?.overlay === "handles") return hit.props["move"] ? "move" : "grab";
+  if (hit?.overlay === "guide" && hit.props["role"]) return "move";
+  return "";
+}
+
 export interface MapAdapter {
   /** Resolves once the adapter has attached its overlays to the host map. */
   ready(): Promise<void>;

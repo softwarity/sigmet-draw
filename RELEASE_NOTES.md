@@ -2,6 +2,29 @@
 
 ## 1.1.1
 
+### Features
+
+- **Read-only mode**: `sigmet.setReadonly(true)` freezes editing — it hides the toolbar and every grab handle/guide and ignores pointer edits, while the area + on-shape label stay visible. `setReadonly(false)` restores everything; `isReadonly` reads the state. Toggle as often as you like (re-renders on each flip). The demo gains an external **Read-only** checkbox in its top bar.
+
+Pre-release audit follow-ups (no behaviour change for the common, non-antimeridian case).
+
+### Fixes
+
+- **Antimeridian — loaded geometry**: `load()` now re-expresses longitudes in the FIR working frame, so a geometry from `fromTAC()` lines up with an antimeridian-crossing FIR (its handles, clipping and pointer input no longer disagree with the coordinates).
+- **Antimeridian — `lonBand` editing**: dragging a `west > east` (AM-crossing) band no longer collapses it — the bounds clamp only to the FIR bbox instead of forcing `west ≤ east`.
+- **Degenerate line on translate/rotate**: after a whole-line drag or transform, the line-side / corridor endpoints are re-snapped to the FIR border *and re-validated* (`lineUsable`); a step that would leave the line collapsed or self-crossing is rejected, so no degenerate TAC is emitted.
+- **Transform scale floor**: the polygon/line transform can no longer blow up its scale when the remembered handle anchor sits near the centroid (`r0` is floored like the cursor distance).
+- **Strict role parsing**: vertex roles are parsed with a strict `^[a-z]\d+$` matcher, so a malformed/empty suffix can't silently resolve to vertex 0.
+
+### Internal / API
+
+- **Removed the `other` style token** (and the `OtherStyle` export): the opposite-side / quadrant-pick surface is an internal, invisible click zone — there's no reason to theme it. *(Breaking only if you set `style.other`.)*
+- Exported the missing `TropicalCycloneGeometry` type (it's produced by `fromTAC`).
+- `setCursor` is now private on both adapters (it was never part of the `MapAdapter` contract).
+- De-duplicated the hover-cursor logic into a shared `cursorForHit` helper; added a `KM_PER_NM` constant for the scattered `1.852` conversions; added `lineUsable` to the pure geometry helpers.
+- **God-module split**: the ~19 pure lon/lat helpers (haversine, bearing, destination, projection, polyline sampling, bbox, antimeridian (un)wrap, role parsing) moved out of `sigmet-draw.ts` into a new `geo.ts` — the controller drops ~290 lines and the helpers are now directly unit-testable.
+- Tests: **+29** — `lineUsable`; a controller harness (fake adapter) covering move-handle translate, vertex-merge rejection, `lonBand` wrap, antimeridian `load` unwrap and read-only mode; and a full `geo.ts` suite. **154 total.**
+
 ---
 
 ## 1.0.4
@@ -36,7 +59,7 @@ tooltip:    { color, background, size }                // was { …, fontSize, p
 ```
 
 - All handles (vertex / control / move / resize / transform / radius) now share **one** `iconHandle` look; the smaller move/resize dot is derived (×0.7) and the glyphs are coloured from `iconHandle.stroke`.
-- `lineHandle` styles construction guides **and** the draggable meridian/parallel lines.
+- `lineHandle` styles the draggable meridian/parallel lines.
 - Removed exports: `FillStyle`, `LineStyle`, `PointStyle`. Added: `AreaStyle`, `OtherStyle`, `IconHandleStyle`, `LineHandleStyle`.
 - **Collinear (TAC-redundant) vertices are always shown as a smaller, stroke-less grey dot** — that state is no longer styleable (the old `collinearVertex` token is gone, with no replacement).
 - Dropped (now internal constants): line `dash`, label `offsetY`, tooltip `padding` / `borderRadius` / `maxWidth`.

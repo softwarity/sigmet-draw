@@ -7,6 +7,7 @@ import type { FeatureCollection } from "geojson";
 import { Map as MapLibreMap } from "maplibre-gl";
 
 import type { LatLng } from "../core/index.js";
+import { cursorForHit } from "./adapter.js";
 import type {
   MapAdapter,
   OverlayId,
@@ -40,6 +41,10 @@ type PointerHandlers = {
 const SMALL_DOT = 0.7;
 /** Collinear (TAC-redundant) vertices are always greyed — not configurable. */
 const COLLINEAR_GREY = "#8b949e";
+/** The `other` overlay is an invisible click surface (flip side / pick quadrant)
+ *  — a faint, non-styleable fill. */
+const OTHER_FILL = "#58a6ff";
+const OTHER_OPACITY = 0.08;
 /** Vertical offset (px) lifting the label above its anchor. */
 const LABEL_OFFSET_Y = -14;
 
@@ -194,7 +199,7 @@ export class MapLibreAdapter implements MapAdapter {
     else this.map.dragPan.disable();
   }
 
-  setCursor(cursor: string): void {
+  private setCursor(cursor: string): void {
     this.map.getCanvas().style.cursor = cursor;
   }
 
@@ -209,19 +214,7 @@ export class MapLibreAdapter implements MapAdapter {
         // hover-moves need it.
         const needHit = type !== "up" && !(type === "move" && this.dragging);
         const hit = needHit ? this.hitAt(e.point) : undefined;
-        if (type === "move" && !this.dragging) {
-          this.setCursor(
-            hit?.overlay === "handles"
-              ? hit.props["move"]
-                ? "move"
-                : "grab"
-              : // Only draggable guide lines (meridian/parallel — they carry a
-                // `role`) get the move cursor; construction guides don't.
-                hit?.overlay === "guide" && hit.props["role"]
-                ? "move"
-                : "",
-          );
-        }
+        if (type === "move" && !this.dragging) this.setCursor(cursorForHit(hit));
         cb({
           type,
           lngLat: { lat: e.lngLat.lat, lon: e.lngLat.lng },
@@ -343,7 +336,7 @@ export class MapLibreAdapter implements MapAdapter {
       id: "other-fill",
       type: "fill",
       source: "other",
-      paint: { "fill-color": s.other.fill, "fill-opacity": s.other.opacity },
+      paint: { "fill-color": OTHER_FILL, "fill-opacity": OTHER_OPACITY },
     });
     this.map.addLayer({
       id: "area-fill",
@@ -402,8 +395,6 @@ export class MapLibreAdapter implements MapAdapter {
   private applyStyle(): void {
     const s = this.style;
     const map = this.map;
-    map.setPaintProperty("other-fill", "fill-color", s.other.fill);
-    map.setPaintProperty("other-fill", "fill-opacity", s.other.opacity);
     map.setPaintProperty("area-fill", "fill-color", s.area.fill);
     map.setPaintProperty("area-fill", "fill-opacity", s.area.opacity);
     map.setPaintProperty("area-line", "line-color", s.area.stroke);

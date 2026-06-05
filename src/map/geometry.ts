@@ -4,6 +4,9 @@
  */
 import type { LatLng } from "../core/index.js";
 
+/** Kilometres per nautical mile — the SIGMET width/radius KM↔NM conversion. */
+export const KM_PER_NM = 1.852;
+
 /** Perpendicular distance from `b` to the line through `a` and `c` (planar). */
 export function perpDist(a: LatLng, b: LatLng, c: LatLng): number {
   const dx = c.lon - a.lon;
@@ -62,6 +65,26 @@ function distToSegment(p: LatLng, a: LatLng, b: LatLng): number {
   let t = ((p.lon - a.lon) * dx + (p.lat - a.lat) * dy) / l2;
   t = Math.max(0, Math.min(1, t));
   return Math.hypot(p.lon - (a.lon + t * dx), p.lat - (a.lat + t * dy));
+}
+
+/**
+ * Is an open polyline usable as a line-side / corridor leg: endpoints at least
+ * `minEndGap` apart (not collapsed onto the same border point) and no two
+ * non-adjacent edges crossing (not folded into a self-intersection). Used to
+ * reject a whole-line translate/transform whose endpoint re-snap degenerated it.
+ */
+export function lineUsable(points: LatLng[], minEndGap: number): boolean {
+  const n = points.length;
+  if (n < 2) return false;
+  const a = points[0]!;
+  const b = points[n - 1]!;
+  if (Math.hypot(b.lon - a.lon, b.lat - a.lat) < minEndGap) return false;
+  for (let i = 0; i + 1 < n; i++) {
+    for (let j = i + 2; j + 1 < n; j++) {
+      if (segmentsCross(points[i]!, points[i + 1]!, points[j]!, points[j + 1]!)) return false;
+    }
+  }
+  return true;
 }
 
 /** Shortest distance between segments p1–p2 and p3–p4 (0 if they cross). */
@@ -237,7 +260,7 @@ export function collapseRing(
  */
 export function widthFor(halfNM: number, nmOnly = false): { unit: "KM" | "NM"; width: number } {
   if (!nmOnly) {
-    const fullKM = halfNM * 2 * 1.852;
+    const fullKM = halfNM * 2 * KM_PER_NM;
     if (fullKM <= 99) return { unit: "KM", width: Math.max(1, Math.round(fullKM)) };
   }
   return { unit: "NM", width: Math.min(99, Math.max(1, Math.round(halfNM * 2))) };
@@ -255,7 +278,7 @@ export function radiusFor(
   nmOnly = false,
 ): { unit: "KM" | "NM"; value: number } {
   if (!nmOnly) {
-    const km = radiusNM * 1.852;
+    const km = radiusNM * KM_PER_NM;
     if (km <= cap) return { unit: "KM", value: Math.max(1, Math.round(km)) };
   }
   return { unit: "NM", value: Math.min(cap, Math.max(1, Math.round(radiusNM))) };

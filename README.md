@@ -151,7 +151,7 @@ shows a floating box **on hover** over it — both are `(result) => string`.
 ```ts
 sigmet.setStyle({
   area: { fill: "#e11d48", opacity: 0.3, stroke: "#e11d48", width: 2 },
-  lineHandle: { stroke: "#22d3ee", width: 3 },        // guides + meridian/parallel lines
+  lineHandle: { stroke: "#22d3ee", width: 3 },        // draggable meridian/parallel lines
   iconHandle: { fill: "#fff", stroke: "#22d3ee" },    // all dot handles + glyphs (glyph colour = stroke)
   label: { color: "#fff", halo: "#0b1622", size: 13, width: 180 }, // width = max px → wraps
   tooltip: { color: "#e6edf3", background: "#0b1622", size: 12 },
@@ -160,8 +160,8 @@ sigmet.setLabel((r) => r.geometry.kind);   // on-shape text (null to hide)
 sigmet.setTooltip((r) => r.tac);           // hover tooltip (null to hide)
 ```
 
-Tokens: `area`, `other`, `iconHandle` (dots: vertices + move/resize/transform/radius),
-`lineHandle` (guides + meridian/parallel lines), `label`, `tooltip`. Collinear
+Tokens: `area`, `iconHandle` (dots: vertices + move/resize/transform/radius),
+`lineHandle` (the draggable meridian/parallel lines), `label`, `tooltip`. Collinear
 (TAC-redundant) vertices are **always greyed** and not configurable. See
 `DEFAULT_STYLE` / `mergeStyle`.
 
@@ -204,14 +204,15 @@ toArea(g, { fir });                // GeoJSON Feature, clipped to the FIR
 `point()`, `entireFir()` · `clear()` · `load(geometry)` · `setFir(fir)` ·
 `firBounds()` → `[minLon,minLat,maxLon,maxLat]` · `firCenter()` → `LatLng` ·
 `setStyle(partial)` · `setLabel(fn|null)` · `setTooltip(fn|null)` ·
-`ready(): Promise` · `destroy()` · `toolbar` (the controller, see below).
+`setReadonly(bool)` / `isReadonly` (read-only mode — hides handles + toolbar,
+freezes editing; area + label stay) · `ready(): Promise` · `destroy()` ·
+`toolbar` (the controller, see below).
 
 ### `SigmetStyle` tokens
 
 | Token | Fields |
 |-------|--------|
 | `area` | `fill`, `stroke`, `width`, `opacity` |
-| `other` | `fill`, `opacity` |
 | `iconHandle` | `fill`, `stroke`, `width`, `radius` |
 | `lineHandle` | `stroke`, `width` |
 | `label` | `color`, `halo`, `size`, `width` *(width = max px before wrapping; halo thickness derived from size)* |
