@@ -36,15 +36,21 @@ jobs:
       - name: Install library dependencies
         run: npm ci
 
+      - name: Run tests (gate the deploy)
+        run: npm test # a failing test stops the deploy
+
       - name: Build library
-        run: npm run build # produces ../dist, consumed by the demo's path alias
+        run: npm run build # produces ./dist, which the demo's tsconfig paths point to
 
       - name: Install demo dependencies
-        run: npm ci
+        run: npm ci # installs @softwarity/draw-adapter from npm (the path fallback)
         working-directory: demo
 
+      # The demo's tsconfig paths map `@softwarity/sigmet-draw` → ../dist (this repo's
+      # build) and `@softwarity/draw-adapter` → sibling-or-npm (here: npm, no sibling in
+      # CI), with leaflet/ol/maplibre forced to the demo's node_modules → single copy.
       - name: Build demo for GitHub Pages
-        run: npx ng build --base-href /sigmet-draw/
+        run: npm run build -- --base-href /sigmet-draw/
         working-directory: demo
 
       - name: Setup Pages

@@ -59,6 +59,24 @@
   .fir-search { min-width: 300px; }
 }
 
+// Random-FIR button: same box as the FIR <select> (just the dice glyph).
+.rnd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+
+  &:hover { background: var(--bg-tertiary, var(--bg-secondary)); border-color: var(--accent-blue); }
+}
+
 .stage {
   display: flex;
   flex-direction: row;

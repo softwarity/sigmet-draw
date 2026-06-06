@@ -16,7 +16,6 @@ class FakeAdapter implements MapAdapter {
   setOverlay(id: OverlayId, data: FeatureCollection): void {
     this.overlays[id] = data;
   }
-  setStyle(): void {}
   setTooltip(): void {}
   addToolbar(_items: ToolbarItem[]): HTMLElement {
     return {} as HTMLElement;
@@ -24,7 +23,22 @@ class FakeAdapter implements MapAdapter {
   getCenter(): LatLng {
     return this.centre;
   }
+  getViewSpan(): number {
+    return 10;
+  }
+  project(): [number, number] | null {
+    return [0, 0];
+  }
+  unproject(): LatLng | null {
+    return { lat: 0, lon: 0 };
+  }
+  onViewChange(): void {}
+  registerSymbols(): Promise<void> {
+    return Promise.resolve();
+  }
   setPanEnabled(): void {}
+  setDoubleClickZoom(): void {}
+  setCursor(): void {}
   onPointer(cb: (ev: PointerEvent) => void): void {
     this.cb = cb;
   }

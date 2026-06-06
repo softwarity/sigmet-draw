@@ -14,11 +14,13 @@ import { registerInteractiveCode } from "@softwarity/interactive-code";
 import {
   DEFAULT_STYLE,
   fromTAC,
+  LeafletAdapter,
   MapLibreAdapter,
   OpenLayersAdapter,
   SigmetDraw,
 } from "@softwarity/sigmet-draw";
-import type { FirInput, SigmetStyleInput, ToolbarPosition } from "@softwarity/sigmet-draw";
+import type { FirInput, SigmetGeometry, SigmetStyleInput, ToolbarPosition } from "@softwarity/sigmet-draw";
+import * as L from "leaflet";
 import { Map as MapLibreMap, NavigationControl } from "maplibre-gl";
 import GeoJSON from "ol/format/GeoJSON";
 import TileLayer from "ol/layer/Tile";
@@ -34,7 +36,19 @@ import { ICONS } from "./icons";
 
 registerInteractiveCode();
 
-type Engine = "maplibre" | "openlayers";
+type Engine = "maplibre" | "openlayers" | "leaflet";
+
+/**
+ * Each engine keeps its OWN idiomatic basemap — so the three are instantly
+ * distinguishable and you see what ships with each one, no forced common tiles:
+ *  - MapLibre   → its built-in demo vector style (demotiles, no API key)
+ *  - OpenLayers → its canonical OSM raster source (`new OSM()`)
+ *  - Leaflet    → a clean light raster in the same vein (CARTO Positron)
+ * All light, so the orange SIGMET area + blue handles stay legible.
+ */
+const MAPLIBRE_DEMO_STYLE = "https://demotiles.maplibre.org/style.json";
+const LEAFLET_POSITRON = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const CARTO_ATTR = "© OpenStreetMap contributors © CARTO";
 type ToolMethod =
   | "circle" | "tropicalCyclone" | "meridian" | "parallel" | "latBand" | "lonBand" | "quadrant"
   | "lineSide" | "corridor" | "wideLine" | "polygon" | "point" | "entireFir";
@@ -63,18 +77,6 @@ const TOOLS: Tool[] = [
   { method: "entireFir", label: "Entire FIR", desc: "Entire FIR — ENTIRE FIR" },
 ];
 
-const OSM_STYLE = {
-  version: 8 as const,
-  sources: {
-    osm: {
-      type: "raster" as const,
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      attribution: "© OpenStreetMap contributors",
-    },
-  },
-  layers: [{ id: "osm", type: "raster" as const, source: "osm" }],
-};
 
 function bboxCenter(fir: FirInput): [number, number] {
   const g = "type" in fir && fir.type === "Feature" ? fir.geometry : fir;
@@ -143,7 +145,7 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   /** Live style edits from the editor panel — re-applied across engine switches. */
   private styleOverride?: SigmetStyleInput;
   /** Whether the on-shape label (the live TAC) is enabled (toggled in the panel). */
-  private labelEnabled = true;
+  private labelEnabled = false;
   /** Whether the hover tooltip is enabled (toggled in the panel). */
   private tooltipOn = false;
   /** Force radii/widths to NM only (toggled in the panel; needs a rebuild). */
@@ -161,8 +163,13 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   protected readonly tbEdge2 = signal(""); // cross-axis edge (corners only)
   protected readonly tbCentered = signal(true);
   private sigmet?: SigmetDraw;
+  /** The current drawing, kept so it survives an engine/option switch (re-`load`ed
+   *  onto the fresh instance). Cleared when the drawing is cleared or the FIR changes. */
+  private lastGeometry?: SigmetGeometry;
   private mlMap?: MapLibreMap;
   private olMap?: OlMap;
+  private lfMap?: L.Map;
+  private lfFirLayer?: L.GeoJSON;
   private olFirSource?: VectorSource;
   private globeBtn?: HTMLButtonElement;
   private mlGlobe = true;
@@ -187,17 +194,31 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   protected setEngine(engine: Engine): void {
     if (engine === this.engine()) return;
     this.engine.set(engine);
-    this.adapterName.set(engine === "maplibre" ? "MapLibreAdapter" : "OpenLayersAdapter");
+    this.adapterName.set(
+      engine === "maplibre" ? "MapLibreAdapter" : engine === "openlayers" ? "OpenLayersAdapter" : "LeafletAdapter",
+    );
     this.mapImport.set(
       engine === "maplibre"
         ? 'import { Map } from "maplibre-gl";'
-        : 'import Map from "ol/Map";',
+        : engine === "openlayers"
+          ? 'import Map from "ol/Map";'
+          : 'import * as L from "leaflet";',
     );
     void this.rebuild();
   }
 
   protected onFir(event: Event): void {
     void this.swapFir((event.target as HTMLSelectElement).value);
+  }
+
+  /** Jump to a random (different) FIR — handy to showcase varied geometries. */
+  protected randomFir(): void {
+    const list = this.firs();
+    if (!list.length) return;
+    const others = list.filter((f) => f.designator !== this.firId());
+    const pool = others.length ? others : list;
+    const pick = pool[Math.floor(Math.random() * pool.length)]!;
+    void this.swapFir(pick.designator);
   }
 
   /** Change FIR WITHOUT recreating the map: swap the FIR data + host outline. */
@@ -211,6 +232,7 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
       const fir = (await fetch(`assets/firs/${designator}.json`).then((r) => r.json())) as FirInput;
       if (this.firId() !== designator) return;
       this.sigmet.setFir(fir); // clears the current drawing
+      this.lastGeometry = undefined; // new FIR ⇒ the old drawing is gone for good
       this.syncTcCenter(); // the centroid substitute moved with the FIR
       this.tac.set("— pick a shape —");
       // Deselect the active tool button too.
@@ -232,6 +254,10 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
           }),
         );
       }
+      if (this.lfMap && this.lfFirLayer) {
+        this.lfFirLayer.clearLayers();
+        this.lfFirLayer.addData(firFeature as never);
+      }
       const b = this.sigmet.firBounds();
       this.mlMap?.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 28, animate: true });
       this.olMap
@@ -240,6 +266,7 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
           padding: [24, 24, 24, 24],
           duration: 300,
         });
+      this.lfMap?.fitBounds([[b[1], b[0]], [b[3], b[2]]], { padding: [24, 24] });
     } catch (e) {
       console.error("[showcase] swapFir failed", e);
     }
@@ -258,6 +285,7 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
 
   protected clear(): void {
     this.sigmet?.clear();
+    this.lastGeometry = undefined;
     this.tac.set("— pick a shape —");
   }
 
@@ -288,7 +316,8 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   protected onPanelChange(ev: Event): void {
     const t = ev.target as { key?: string; value?: unknown } | null;
     if (t?.key === "adapter") {
-      this.setEngine(String(t.value) === "OpenLayersAdapter" ? "openlayers" : "maplibre");
+      const v = String(t.value);
+      this.setEngine(v === "OpenLayersAdapter" ? "openlayers" : v === "LeafletAdapter" ? "leaflet" : "maplibre");
       return;
     }
     if (t?.key === "labelFn") {
@@ -332,7 +361,12 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
       this.applyTbPadding();
       return;
     }
-    if (t?.key === "mapImport") return; // readonly, engine-driven
+    if (t?.key === "readonly") {
+      this.readonly.set(t.value === true || t.value === "true");
+      this.sigmet?.setReadonly(this.readonly()); // live freeze/unfreeze
+      return;
+    }
+    if (t?.key === "mapImport") return; // readonly field, engine-driven
     this.onStyleChange(ev);
   }
 
@@ -389,12 +423,6 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
     this.updateGlobeBtn();
   }
 
-  /** Freeze/unfreeze editing (read-only mode) — hides handles + toolbar. */
-  protected toggleReadonly(): void {
-    this.readonly.set(!this.readonly());
-    this.sigmet?.setReadonly(this.readonly());
-  }
-
   /** Icon shows the *current* view mode (globe in globe, flat map in 2D — like a
    *  mute button); the tooltip carries the action. */
   private updateGlobeBtn(): void {
@@ -421,8 +449,11 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
     this.sigmet = undefined;
     try { this.mlMap?.remove(); } catch (e) { console.error("[showcase] ml remove", e); }
     try { this.olMap?.setTarget(undefined); } catch (e) { console.error("[showcase] ol detach", e); }
+    try { this.lfMap?.remove(); } catch (e) { console.error("[showcase] lf remove", e); }
     this.mlMap = undefined;
     this.olMap = undefined;
+    this.lfMap = undefined;
+    this.lfFirLayer = undefined;
     this.olFirSource = undefined;
     this.globeBtn = undefined;
     const el = this.mapEl().nativeElement;
@@ -438,6 +469,9 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
       const fir = (await fetch(`assets/firs/${id}.json`).then((r) => r.json())) as FirInput;
       if (this.firId() !== id || this.engine() !== eng) return;
 
+      // Capture the current drawing before teardown so we can re-`load` it on the
+      // new instance (preserves the shape when switching engine / toggling options).
+      const keep = this.lastGeometry;
       this.teardown();
       this.tac.set("— pick a shape —");
       const center = bboxCenter(fir);
@@ -446,9 +480,9 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
           ? fir
           : { type: "Feature" as const, properties: {}, geometry: fir };
 
-      let adapter: MapLibreAdapter | OpenLayersAdapter;
+      let adapter: MapLibreAdapter | OpenLayersAdapter | LeafletAdapter;
       if (eng === "maplibre") {
-        const map = new MapLibreMap({ container: el, style: OSM_STYLE, center, zoom: 4 });
+        const map = new MapLibreMap({ container: el, style: MAPLIBRE_DEMO_STYLE, center, zoom: 4 });
         this.mlMap = map;
         map.addControl(new NavigationControl());
         // Globe toggle belongs with zoom/compass (not a SIGMET tool) → into that group.
@@ -478,7 +512,7 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
           map.setProjection({ type: "globe" });
         });
         adapter = new MapLibreAdapter({ map });
-      } else {
+      } else if (eng === "openlayers") {
         const firSource = new VectorSource({
           features: new GeoJSON().readFeatures(firFeature, {
             dataProjection: "EPSG:4326",
@@ -502,6 +536,16 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
         });
         this.olMap = map;
         adapter = new OpenLayersAdapter({ map });
+      } else {
+        // Leaflet — lat/lng-native, a host-owned `L.Map`. Clean light basemap (Positron).
+        const map = L.map(el, { zoomControl: true }).setView([center[1], center[0]], 4);
+        L.tileLayer(LEAFLET_POSITRON, { attribution: CARTO_ATTR, subdomains: "abcd" }).addTo(map);
+        // Host draws its own FIR outline (SigmetDraw never touches the basemap).
+        this.lfFirLayer = L.geoJSON(firFeature as never, {
+          style: { color: "#000000", weight: 2, dashArray: "4 4", fillColor: "#f5d90a", fillOpacity: 0.12 },
+        }).addTo(map);
+        this.lfMap = map;
+        adapter = new LeafletAdapter({ map });
       }
 
       this.sigmet = new SigmetDraw({
@@ -511,6 +555,8 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
         label: this.labelEnabled ? (r) => r.tac : undefined,
         tooltip: this.tooltipOn ? (r) => r.tac : undefined,
         nauticalMilesOnly: this.nmOnly,
+        // Start frozen (no handles/toolbar) when the read-only toggle is on.
+        readonly: this.readonly(),
         // Re-apply any live style edits so they survive an engine switch.
         style: this.styleOverride,
         // Turnkey native toolbar (built-in icons, all tools wired); omit → no toolbar.
@@ -520,13 +566,17 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
         this.tac.set(r.tac);
         this.tacInput.set(r.tac);
         this.tacError.set("");
+        this.lastGeometry = r.geometry; // remember the drawing across engine switches
       });
       await this.sigmet.ready();
 
+      // Re-draw what was on screen before the rebuild (engine/option switch keeps
+      // the same FIR, so the geometry is still valid).
+      if (keep) this.sigmet.load(keep);
+
       // No real TC input here → enable the TC button with the FIR centroid.
       this.syncTcCenter();
-      // Re-apply read-only so it survives an engine/FIR switch.
-      if (this.readonly()) this.sigmet.setReadonly(true);
+      // (read-only is applied at construction via the `readonly` option above)
 
       const b = this.sigmet.firBounds();
       this.mlMap?.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 28, animate: false });
@@ -535,6 +585,7 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
         .fit(transformExtent([b[0], b[1], b[2], b[3]], "EPSG:4326", "EPSG:3857"), {
           padding: [24, 24, 24, 24],
         });
+      this.lfMap?.fitBounds([[b[1], b[0]], [b[3], b[2]]], { padding: [24, 24] });
     } catch (e) {
       console.error("[showcase] rebuild failed", e);
     }

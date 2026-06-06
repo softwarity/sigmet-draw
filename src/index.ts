@@ -45,3 +45,6 @@ export type {
 
 export { MapLibreAdapter, createMapLibreMap } from "./map/maplibre-adapter.js";
 export { OpenLayersAdapter, createOpenLayersMap } from "./map/openlayers-adapter.js";
+export { LeafletAdapter, createLeafletMap } from "./map/leaflet-adapter.js";
+
+export { SIGMET_LAYERS, SIGMET_HIT, decorate } from "./map/style-features.js";

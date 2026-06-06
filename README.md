@@ -4,12 +4,22 @@
 [![minzipped size](https://img.shields.io/bundlephobia/minzip/@softwarity/sigmet-draw)](https://bundlephobia.com/package/@softwarity/sigmet-draw)
 [![install size](https://packagephobia.com/badge?p=@softwarity/sigmet-draw)](https://packagephobia.com/result?p=@softwarity/sigmet-draw)
 
+**Works with** &nbsp;<sub>(via <code>@softwarity/draw-adapter</code>)</sub>
+
+<p align="left">
+  <a href="https://maplibre.org/" title="MapLibre"><img src="demo/src/assets/logos/maplibre.svg" alt="MapLibre" height="24"></a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://openlayers.org/" title="OpenLayers"><img src="demo/src/assets/logos/openlayers.svg" alt="" height="22">&nbsp;<b>OpenLayers</b></a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://leafletjs.com/" title="Leaflet"><img src="demo/src/assets/logos/leaflet.png" alt="Leaflet" height="26"></a>
+</p>
+
 Draw **SIGMET/AIRMET geometries** on a map and (de)serialize them to/from
 **ICAO/WMO TAC** (the coded text form, WMO-No.49 Vol II, App. 6).
 
 It is a **headless library that grafts onto your map** — like Terra Draw. You
-bring a MapLibre **or** OpenLayers map (basemap, controls, projection are yours);
-the library adds the SIGMET drawing on top through a thin adapter, exposes
+bring a MapLibre, OpenLayers **or** Leaflet map (basemap, controls, projection
+are yours); the library adds the SIGMET drawing on top through a thin adapter, exposes
 imperative tools (`circle()`, `meridian()`, …) and a `change` event, and never
 depends on a concrete map engine.
 
@@ -76,9 +86,12 @@ meridianBtn.onclick = () => sigmet.meridian();
 clearBtn.onclick    = () => sigmet.clear();
 ```
 
-OpenLayers is identical with `new OpenLayersAdapter({ map })` (an `ol/Map`). The
-consumer loads the engine's stylesheet (`maplibre-gl/dist/maplibre-gl.css` or
-`ol/ol.css`). Engine capabilities differ: globe is MapLibre-only.
+OpenLayers is identical with `new OpenLayersAdapter({ map })` (an `ol/Map`), and
+Leaflet with `new LeafletAdapter({ map })` (an `L.Map`, from
+`@softwarity/sigmet-draw/leaflet`). The consumer loads the engine's stylesheet
+(`maplibre-gl/dist/maplibre-gl.css`, `ol/ol.css`, or `leaflet/dist/leaflet.css`).
+Each engine is an **optional** `peerDependency` — install only the one(s) you use.
+Engine capabilities differ: globe is MapLibre-only (OpenLayers & Leaflet are 2D).
 
 `SigmetDraw` methods: `circle()`, `tropicalCyclone(center)`, `meridian()`, `parallel()`,
 `latBand()`, `lonBand()`, `quadrant()`, `lineSide()`, `corridor()`, `polygon()`,
@@ -143,8 +156,8 @@ are exported.
 
 ### Styling & dynamic label
 
-One engine-agnostic `SigmetStyle` (translated natively by each adapter — identical
-on MapLibre/OpenLayers). Override only what you want, at construction (`style`) or
+One engine-agnostic `SigmetStyle` (baked into the data by `decorate`, rendered
+identically on MapLibre / OpenLayers / Leaflet). Override only what you want, at construction (`style`) or
 live (`setStyle`). A dynamic `label` prints text **on** the shape; a `tooltip`
 shows a floating box **on hover** over it — both are `(result) => string`.
 
@@ -237,27 +250,36 @@ One repo, **one npm package** (built with `tsc`), plus a standalone **Angular
 demo** in `demo/` (deployed to GitHub Pages). The map engine is confined to the
 adapters; everything above is agnostic.
 
+The per-engine map adapters live in the shared **[`@softwarity/draw-adapter`](https://www.npmjs.com/package/@softwarity/draw-adapter)**
+package (generic, data-driven, reused across the @softwarity drawing libs). The
+adapters here are thin wrappers that pre-bind the SIGMET layer manifest; styling
+is carried by the feature data (`style-features.ts`/`decorate`), so the adapter
+never sees a domain type.
+
 ```
 src/
   core/                pure logic — 12 templates, TAC ↔ params, area (turf) — no map dep
   map/
-    adapter.ts         MapAdapter interface (ready/setOverlay/onPointer/addToolbar/…)
-    maplibre-adapter.ts   MapLibreAdapter({ map })   + createMapLibreMap
-    openlayers-adapter.ts OpenLayersAdapter({ map }) + createOpenLayersMap
+    adapter.ts         back-compat shim → @softwarity/draw-adapter types
+    maplibre-adapter.ts   MapLibreAdapter({ map })   + createMapLibreMap   (thin wrapper)
+    openlayers-adapter.ts OpenLayersAdapter({ map }) + createOpenLayersMap (thin wrapper)
+    leaflet-adapter.ts    LeafletAdapter({ map })    + createLeafletMap    (thin wrapper)
+    style-features.ts  SIGMET_LAYERS / SIGMET_HIT + decorate() (bakes SigmetStyle into data)
     sigmet-draw.ts     SigmetDraw — the engine-agnostic drawing logic
     style.ts           SigmetStyle spec + DEFAULT_STYLE / mergeStyle
     tools.ts           DEFAULT_TOOLS + TOOL_ICONS (turnkey toolbar)
     geometry.ts        pure helpers (collapse, snap, radius/width units)
-    toolbar.ts         native toolbar builder
-test/                  vitest (core + geometry/style helpers)
-demo/                  Angular demo: graft on both engines, FIR selector grouped
+test/                  vitest (core + geometry/style helpers + controller harness)
+demo/                  Angular demo: graft on all three engines, FIR selector grouped
                        by geometry (antimeridian, poles, equator, huge, …), live
                        style editor, turnkey toolbar
 ```
 
-Package exports: `.` (all), `./core` (pure logic), `./maplibre`, `./openlayers`
-(per-engine adapters, so a consumer pulls only the engine it uses). MapLibre and
-OpenLayers are optional `peerDependencies`.
+Package exports: `.` (all), `./core` (pure logic), `./maplibre`, `./openlayers`,
+`./leaflet`
+(per-engine adapters, so a consumer pulls only the engine it uses). MapLibre,
+OpenLayers and Leaflet are optional `peerDependencies`; `@softwarity/draw-adapter`
+is a regular dependency (the shared adapter core).
 
 ### Notable details
 

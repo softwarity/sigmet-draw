@@ -21,9 +21,11 @@ import type {
   Position,
 } from "geojson";
 
+import type { MapAdapter, PointerEvent } from "@softwarity/draw-adapter";
+
 import { toArea, toTAC } from "../core/index.js";
 import type { FirInput, LatLng, SigmetGeometry } from "../core/index.js";
-import type { MapAdapter, PointerEvent } from "./adapter.js";
+import { decorate, toGenericTooltip } from "./style-features.js";
 import {
   bboxOf,
   bearingDeg,
@@ -94,6 +96,12 @@ export interface SigmetDrawOptions {
    * Omit for none; styleable via `style.tooltip`.
    */
   tooltip?: LabelFn;
+  /**
+   * Start in read-only mode: no handles/guides, no editing, toolbar hidden (the
+   * area + label stay visible). Toggle later with {@link SigmetDraw.setReadonly}.
+   * Default: false.
+   */
+  readonly?: boolean;
 }
 
 export interface SigmetResult {
@@ -253,18 +261,18 @@ export class SigmetDraw {
     this.labelFn = opts.label ?? null;
     this.tooltipFn = opts.tooltip ?? null;
     this.nmOnly = opts.nauticalMilesOnly ?? false;
+    this.readOnly = opts.readonly ?? false;
     if (opts.toolbar) {
       const cfg: ToolbarConfig = opts.toolbar === true ? {} : opts.toolbar;
       this._toolbar = new SigmetToolbar(this, this.adapter, cfg);
     }
-    // Hand the resolved style to the adapter before it builds its overlays.
-    this.adapter.setStyle(this.style);
     this.applyFir(opts.fir);
 
     this.readyPromise = this.adapter.ready().then(() => {
       // The FIR is drawn by the host on its own map — not by this module.
       this.adapter.onPointer((ev) => this.onPointer(ev));
       this._toolbar?.attach();
+      if (this.readOnly) this._toolbar?.setVisible(false); // honour `readonly` at start
     });
   }
 
@@ -274,10 +282,26 @@ export class SigmetDraw {
     return this._toolbar;
   }
 
-  /** Restyle the overlays live (partial override, merged onto the current style). */
+  /** Restyle the overlays live (partial override, merged onto the current style).
+   *  Style now lives in the data: store it and re-bake the active overlays. */
   setStyle(style: SigmetStyleInput): void {
     this.style = mergeStyle(this.style, style);
-    this.adapter.setStyle(this.style);
+    this.renderActive();
+  }
+
+  /** Push a FeatureCollection through {@link decorate} (style-in-the-data) into the
+   *  generic adapter — replaces every `adapter.setOverlay` call site. */
+  private push(id: string, data: FeatureCollection): void {
+    const decorated = decorate(id, data, this.style);
+    this.adapter.setOverlay(id, decorated);
+    // Live cursor while dragging a handle: adapters don't hit-test mid-drag, so
+    // follow the dragged handle's freshly-baked `cursor` here (e.g. the scale
+    // handle's directional resize cursor as it sweeps around the shape).
+    if (this.dragTarget && id === "handles") {
+      const f = decorated.features.find((ft) => ft.properties?.["role"] === this.dragTarget);
+      const c = f?.properties?.["cursor"];
+      if (typeof c === "string" && c) this.adapter.setCursor(c);
+    }
   }
 
   /** Set (or clear, with `null`) the dynamic on-shape text, then re-render. */
@@ -380,8 +404,8 @@ export class SigmetDraw {
   /** Drop a circle at the current view centre (constrained inside the FIR); both
    *  the centre and the radius are draggable (`WI nnNM OF PSN …`, 0–99). */
   circle(): void {
-    this.adapter.setOverlay("guide", EMPTY);
-    this.adapter.setOverlay("other", EMPTY);
+    this.push("guide", EMPTY);
+    this.push("other", EMPTY);
     const [minLon, minLat, maxLon, maxLat] = this.firBbox;
     let c: LatLng = {
       lat: clamp(this.center().lat, minLat, maxLat),
@@ -402,8 +426,8 @@ export class SigmetDraw {
    * draggable); only the radius is edited, up to 999 (`WI nnnNM OF TC CENTRE`).
    */
   tropicalCyclone(center: LatLng): void {
-    this.adapter.setOverlay("guide", EMPTY);
-    this.adapter.setOverlay("other", EMPTY);
+    this.push("guide", EMPTY);
+    this.push("other", EMPTY);
     const [minLon, minLat, maxLon, maxLat] = this.firBbox;
     const midLat = (minLat + maxLat) / 2;
     const halfWidthNM = haversineNM([minLon, midLat], [maxLon, midLat]) / 2;
@@ -414,7 +438,7 @@ export class SigmetDraw {
   }
 
   meridian(): void {
-    this.adapter.setOverlay("handles", EMPTY);
+    this.push("handles", EMPTY);
     const [minLon, , maxLon] = this.firBbox;
     const lon = clamp(this.center().lon, minLon, maxLon);
     this.active = { kind: "meridian", lon, side: "E" };
@@ -422,7 +446,7 @@ export class SigmetDraw {
   }
 
   parallel(): void {
-    this.adapter.setOverlay("handles", EMPTY);
+    this.push("handles", EMPTY);
     const [, minLat, , maxLat] = this.firBbox;
     const lat = clamp(this.center().lat, minLat, maxLat);
     this.active = { kind: "parallel", lat, side: "N" };
@@ -430,7 +454,7 @@ export class SigmetDraw {
   }
 
   latBand(): void {
-    this.adapter.setOverlay("handles", EMPTY);
+    this.push("handles", EMPTY);
     const [, minLat, , maxLat] = this.firBbox;
     const mid = (minLat + maxLat) / 2;
     const q = (maxLat - minLat) * 0.2;
@@ -443,7 +467,7 @@ export class SigmetDraw {
   }
 
   lonBand(): void {
-    this.adapter.setOverlay("handles", EMPTY);
+    this.push("handles", EMPTY);
     const [minLon, , maxLon] = this.firBbox;
     const mid = (minLon + maxLon) / 2;
     const q = (maxLon - minLon) * 0.2;
@@ -456,7 +480,7 @@ export class SigmetDraw {
   }
 
   quadrant(): void {
-    this.adapter.setOverlay("handles", EMPTY);
+    this.push("handles", EMPTY);
     const [minLon, minLat, maxLon, maxLat] = this.firBbox;
     const lat = clamp(this.center().lat, minLat, maxLat);
     const lon = clamp(this.center().lon, minLon, maxLon);
@@ -573,7 +597,7 @@ export class SigmetDraw {
     this.lastResult = null;
     this.adapter.setTooltip(null, { lat: 0, lon: 0 });
     for (const id of ["area", "other", "guide", "handles", "label"] as const) {
-      this.adapter.setOverlay(id, EMPTY);
+      this.push(id, EMPTY);
     }
   }
 
@@ -876,8 +900,8 @@ export class SigmetDraw {
     // Disabled (read-only) mode: keep the area + label, drop every grab handle
     // and guide so nothing looks (or is) editable. Toggling re-renders them.
     if (this.readOnly) {
-      this.adapter.setOverlay("handles", EMPTY);
-      this.adapter.setOverlay("guide", EMPTY);
+      this.push("handles", EMPTY);
+      this.push("guide", EMPTY);
     }
   }
 
@@ -893,10 +917,10 @@ export class SigmetDraw {
         opts,
       );
       const [, minLat, , maxLat] = this.firBbox;
-      this.adapter.setOverlay("area", selected ? fc([selected]) : EMPTY);
-      this.adapter.setOverlay("other", opposite ? fc([opposite]) : EMPTY);
-      this.adapter.setOverlay("handles", EMPTY);
-      this.adapter.setOverlay("guide", fc([vLine(minLat, maxLat, a.lon, "lon")]));
+      this.push("area", selected ? fc([selected]) : EMPTY);
+      this.push("other", opposite ? fc([opposite]) : EMPTY);
+      this.push("handles", EMPTY);
+      this.push("guide", fc([vLine(minLat, maxLat, a.lon, "lon")]));
       this.emit(a, selected ?? EMPTY_AREA);
       return;
     }
@@ -909,10 +933,10 @@ export class SigmetDraw {
         opts,
       );
       const [minLon, , maxLon] = this.firBbox;
-      this.adapter.setOverlay("area", selected ? fc([selected]) : EMPTY);
-      this.adapter.setOverlay("other", opposite ? fc([opposite]) : EMPTY);
-      this.adapter.setOverlay("handles", EMPTY);
-      this.adapter.setOverlay("guide", fc([hLine(minLon, maxLon, a.lat, "lat")]));
+      this.push("area", selected ? fc([selected]) : EMPTY);
+      this.push("other", opposite ? fc([opposite]) : EMPTY);
+      this.push("handles", EMPTY);
+      this.push("guide", fc([hLine(minLon, maxLon, a.lat, "lat")]));
       this.emit(a, selected ?? EMPTY_AREA);
       return;
     }
@@ -920,10 +944,10 @@ export class SigmetDraw {
     if (a.kind === "latBand") {
       const area = this.areaOrNull(a, { fir: this.firFeature, lonBounds: this.lonBounds });
       const [minLon, , maxLon] = this.firBbox;
-      this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
-      this.adapter.setOverlay("other", EMPTY);
-      this.adapter.setOverlay("handles", EMPTY);
-      this.adapter.setOverlay(
+      this.push("area", area ? fc([area]) : EMPTY);
+      this.push("other", EMPTY);
+      this.push("handles", EMPTY);
+      this.push(
         "guide",
         fc([
           hLine(minLon, maxLon, a.north, "north"),
@@ -937,10 +961,10 @@ export class SigmetDraw {
     if (a.kind === "lonBand") {
       const area = this.areaOrNull(a, { fir: this.firFeature, lonBounds: this.lonBounds });
       const [, minLat, , maxLat] = this.firBbox;
-      this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
-      this.adapter.setOverlay("other", EMPTY);
-      this.adapter.setOverlay("handles", EMPTY);
-      this.adapter.setOverlay(
+      this.push("area", area ? fc([area]) : EMPTY);
+      this.push("other", EMPTY);
+      this.push("handles", EMPTY);
+      this.push(
         "guide",
         fc([
           vLine(minLat, maxLat, a.west, "west"),
@@ -954,11 +978,11 @@ export class SigmetDraw {
     if (a.kind === "quadrant") {
       const selected = this.areaOrNull(a, { fir: this.firFeature, lonBounds: this.lonBounds });
       const [minLon, minLat, maxLon, maxLat] = this.firBbox;
-      this.adapter.setOverlay("area", selected ? fc([selected]) : EMPTY);
+      this.push("area", selected ? fc([selected]) : EMPTY);
       // The whole FIR is the clickable surface to pick which corner.
-      this.adapter.setOverlay("other", fc([this.firFeature as Feature]));
-      this.adapter.setOverlay("handles", EMPTY);
-      this.adapter.setOverlay(
+      this.push("other", fc([this.firFeature as Feature]));
+      this.push("handles", EMPTY);
+      this.push(
         "guide",
         fc([vLine(minLat, maxLat, a.lon, "lon"), hLine(minLon, maxLon, a.lat, "lat")]),
       );
@@ -977,10 +1001,10 @@ export class SigmetDraw {
       const selected = this.areaOrNull(geom, opts);
       const opposite = this.areaOrNull({ ...geom, side: oppositeSide(a.side) }, opts);
       // Clear on no-overlap (and clear a previous shape's fill on tool switch).
-      this.adapter.setOverlay("area", selected ? fc([selected]) : EMPTY);
-      this.adapter.setOverlay("other", opposite ? fc([opposite]) : EMPTY);
+      this.push("area", selected ? fc([selected]) : EMPTY);
+      this.push("other", opposite ? fc([opposite]) : EMPTY);
       // The line carries a role → it's grabbable: drag the body to translate it.
-      this.adapter.setOverlay("guide", fc([lineFeature(extendLine(a.points, span * 0.06), "line")]));
+      this.push("guide", fc([lineFeature(extendLine(a.points, span * 0.06), "line")]));
       // Scale+rotate handle in a corner of the line's envelope (like the polygon).
       const sizeAt =
         this.dragTarget === "size" && this.sizeAnchor
@@ -988,7 +1012,7 @@ export class SigmetDraw {
           : this.transformRest(a.points, 0.18);
       const cen = pointsMean(a.points);
       const sizeRot = (Math.atan2(sizeAt.lon - cen.lon, sizeAt.lat - cen.lat) * 180) / Math.PI;
-      this.adapter.setOverlay(
+      this.push(
         "handles",
         fc([
           ...a.points.map((p, i) =>
@@ -1018,9 +1042,9 @@ export class SigmetDraw {
       const area = this.areaOrNull(geom, { fir: this.firFeature, lonBounds: this.lonBounds });
       // Clear the band when there's genuinely no overlap (also clears any
       // previous shape's fill when this tool is freshly selected).
-      this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
-      this.adapter.setOverlay("other", EMPTY);
-      this.adapter.setOverlay(
+      this.push("area", area ? fc([area]) : EMPTY);
+      this.push("other", EMPTY);
+      this.push(
         "guide",
         fc([
           lineFeature(extendLine(a.lineA.points, span * 0.06), "lineA"),
@@ -1035,7 +1059,7 @@ export class SigmetDraw {
           : this.transformRest(all, 0.18);
       const cen = pointsMean(all);
       const sizeRot = (Math.atan2(sizeAt.lon - cen.lon, sizeAt.lat - cen.lat) * 180) / Math.PI;
-      this.adapter.setOverlay(
+      this.push(
         "handles",
         fc([
           ...a.lineA.points.map((p, i) =>
@@ -1053,20 +1077,20 @@ export class SigmetDraw {
 
     if (a.kind === "point") {
       const area = toArea(a) as Feature<Point>;
-      this.adapter.setOverlay("area", EMPTY);
-      this.adapter.setOverlay("other", EMPTY);
-      this.adapter.setOverlay("guide", EMPTY);
-      this.adapter.setOverlay("handles", fc([pointFeature(a.position.lon, a.position.lat, "p")]));
+      this.push("area", EMPTY);
+      this.push("other", EMPTY);
+      this.push("guide", EMPTY);
+      this.push("handles", fc([pointFeature(a.position.lon, a.position.lat, "p")]));
       this.emit(a, area);
       return;
     }
 
     if (a.kind === "entireFir") {
       const area = this.areaOrNull(a, { fir: this.firFeature, lonBounds: this.lonBounds });
-      this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
-      this.adapter.setOverlay("other", EMPTY);
-      this.adapter.setOverlay("guide", EMPTY);
-      this.adapter.setOverlay("handles", EMPTY);
+      this.push("area", area ? fc([area]) : EMPTY);
+      this.push("other", EMPTY);
+      this.push("guide", EMPTY);
+      this.push("handles", EMPTY);
       this.emit(a, area ?? EMPTY_AREA);
       return;
     }
@@ -1111,9 +1135,9 @@ export class SigmetDraw {
         lonBounds: this.lonBounds,
         clipBounded: true,
       });
-      this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
-      this.adapter.setOverlay("other", EMPTY);
-      this.adapter.setOverlay("guide", EMPTY);
+      this.push("area", area ? fc([area]) : EMPTY);
+      this.push("other", EMPTY);
+      this.push("guide", EMPTY);
       // Move handle (centroid) + uniform-scale handle just outside the top-right
       // bbox corner so the whole shape can be dragged / resized without touching
       // all 7 vertices.
@@ -1126,7 +1150,7 @@ export class SigmetDraw {
         this.dragTarget === "size" && this.sizeAnchor
           ? this.sizeAnchor
           : this.transformRest(a.points, 0.18);
-      this.adapter.setOverlay(
+      this.push(
         "handles",
         fc([
           ...a.points.map((p, i) =>
@@ -1163,9 +1187,9 @@ export class SigmetDraw {
       const foot = pointAtFraction(ends, this.widthT);
       const brg = bearingDeg(ends[0]!, ends[ends.length - 1]!) + this.widthAngle;
       const wh = destinationPoint(foot, halfNM, brg);
-      this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
-      this.adapter.setOverlay("other", EMPTY);
-      this.adapter.setOverlay("guide", EMPTY); // no centreline — the filled buffer says it all
+      this.push("area", area ? fc([area]) : EMPTY);
+      this.push("other", EMPTY);
+      this.push("guide", EMPTY); // no centreline — the filled buffer says it all
       const cen = pointsMean(a.points);
       // Zoom+rotate handle in a corner of the line's envelope (pushed out so it
       // never overlaps the move/vertex handles), exactly like the polygon.
@@ -1174,7 +1198,7 @@ export class SigmetDraw {
           ? this.sizeAnchor
           : this.transformRest(a.points, 0.18);
       const sizeRot = (Math.atan2(sizeAt.lon - cen.lon, sizeAt.lat - cen.lat) * 180) / Math.PI;
-      this.adapter.setOverlay(
+      this.push(
         "handles",
         fc([
           ...a.points.map((p, i) =>
@@ -1199,10 +1223,10 @@ export class SigmetDraw {
       });
       const radiusNM = a.unit === "KM" ? a.radius / KM_PER_NM : a.radius;
       const edge = destinationPoint(a.center, radiusNM, this.circleBearing);
-      this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
-      this.adapter.setOverlay("other", EMPTY);
-      this.adapter.setOverlay("guide", EMPTY);
-      this.adapter.setOverlay(
+      this.push("area", area ? fc([area]) : EMPTY);
+      this.push("other", EMPTY);
+      this.push("guide", EMPTY);
+      this.push(
         "handles",
         fc([
           pointFeature(a.center.lon, a.center.lat, "center", { move: true }),
@@ -1227,14 +1251,14 @@ export class SigmetDraw {
       });
       const radiusNM = a.unit === "KM" ? a.radius / KM_PER_NM : a.radius;
       const edge = destinationPoint(a.center, radiusNM, this.circleBearing);
-      this.adapter.setOverlay("area", area ? fc([area]) : EMPTY);
-      this.adapter.setOverlay("other", EMPTY);
-      this.adapter.setOverlay("guide", EMPTY);
+      this.push("area", area ? fc([area]) : EMPTY);
+      this.push("other", EMPTY);
+      this.push("guide", EMPTY);
       // No centre handle — the centre is fixed and not part of the TAC; only the
       // radius is editable.
-      this.adapter.setOverlay(
+      this.push(
         "handles",
-        fc([pointFeature(edge[0], edge[1], "radius", { control: true })]),
+        fc([pointFeature(edge[0], edge[1], "radius", { control: true, iconRotate: this.circleBearing })]),
       );
       this.emit(a, area ?? EMPTY_AREA);
       return;
@@ -1284,7 +1308,7 @@ export class SigmetDraw {
       r.area as Feature<Polygon | MultiPolygon>,
     );
     const text = inside ? this.tooltipFn(r) : "";
-    this.adapter.setTooltip(text || null, ev.lngLat);
+    this.adapter.setTooltip(text || null, ev.lngLat, toGenericTooltip(this.style.tooltip));
   }
 
   /** Place the dynamic text (if configured) at the shape's anchor point. */
@@ -1292,10 +1316,10 @@ export class SigmetDraw {
     const text = this.labelFn ? this.labelFn(result) : "";
     const anchor = text ? labelAnchor(result.area) : null;
     if (!anchor) {
-      this.adapter.setOverlay("label", EMPTY);
+      this.push("label", EMPTY);
       return;
     }
-    this.adapter.setOverlay("label", fc([pointFeature(anchor[0], anchor[1], "label", { text })]));
+    this.push("label", fc([pointFeature(anchor[0], anchor[1], "label", { text })]));
   }
 
   /** Unwrap a pointer/centre position into the FIR's longitude frame. */

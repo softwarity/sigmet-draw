@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { applyToolbarLayout, populateToolbar } from "@softwarity/draw-adapter";
 import type { MapAdapter, ToolbarItem, ToolbarOptions } from "../src/map/adapter";
 import { SigmetToolbar } from "../src/map/toolbar-controller";
 import type { ToolbarHost } from "../src/map/toolbar-controller";
-import { applyToolbarLayout, populateToolbar } from "../src/map/toolbar";
 
 describe("applyToolbarLayout — 12 positions", () => {
   const layout = (position: ToolbarOptions["position"]): CSSStyleDeclaration => {

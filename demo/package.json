@@ -18,20 +18,18 @@
     "@angular/platform-browser": "^21.0.3",
     "@angular/router": "^21.0.3",
     "@softwarity/interactive-code": "^1.0.7",
-    "@turf/boolean-point-in-polygon": "^7.1.0",
-    "@turf/buffer": "^7.1.0",
-    "@turf/circle": "^7.1.0",
-    "@turf/helpers": "^7.1.0",
-    "@turf/intersect": "^7.1.0",
+    "leaflet": "^1.9.4",
     "maplibre-gl": "^5.24.0",
     "ol": "^10.9.0",
     "rxjs": "~7.8.1",
-    "tslib": "^2.6.2"
+    "tslib": "^2.6.2",
+    "@softwarity/draw-adapter": "^0.1.0"
   },
   "devDependencies": {
     "@angular/build": "^21.0.2",
     "@angular/cli": "^21.0.2",
     "@angular/compiler-cli": "^21.0.3",
+    "@types/leaflet": "^1.9.21",
     "typescript": "~5.9.3"
   }
 }

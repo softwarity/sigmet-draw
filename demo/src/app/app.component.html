@@ -35,8 +35,23 @@
     <p class="description">
       Draw <strong>SIGMET/AIRMET geometries</strong> on a map and (de)serialize them to/from
       <strong>ICAO TAC</strong>. A headless library that <em>grafts</em> onto your own
-      MapLibre <em>or</em> OpenLayers map — pick the engine below and draw.
+      MapLibre, OpenLayers <em>or</em> Leaflet map — pick the engine below and draw.
     </p>
+
+    <div class="engines" aria-label="Supported map engines">
+      <span class="lbl">Renders identically on</span>
+      <a class="eng ml" href="https://maplibre.org/" target="_blank" rel="noopener" title="MapLibre GL">
+        <img src="assets/logos/maplibre.svg" alt="MapLibre GL" />
+      </a>
+      <a class="eng ol" href="https://openlayers.org/" target="_blank" rel="noopener" title="OpenLayers">
+        <img src="assets/logos/openlayers.svg" alt="" />
+        <span class="ol-name">OpenLayers</span>
+      </a>
+      <a class="eng" href="https://leafletjs.com/" target="_blank" rel="noopener" title="Leaflet">
+        <img src="assets/logos/leaflet.png" alt="Leaflet" />
+      </a>
+      <span class="via">via <code>&#64;softwarity/draw-adapter</code></span>
+    </div>
 
     <app-showcase></app-showcase>
 

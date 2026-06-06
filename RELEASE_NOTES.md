@@ -2,6 +2,21 @@
 
 ## 1.1.4
 
+### Features
+
+- **Leaflet support**: a third engine alongside MapLibre and OpenLayers — `new LeafletAdapter({ map })` (a host-owned `L.Map`) + `createLeafletMap`, exported from the new `@softwarity/sigmet-draw/leaflet` subpath. Leaflet is an **optional** `peerDependency` (`leaflet >= 1.9`); 2D only (no globe, like OpenLayers). Load `leaflet/dist/leaflet.css` in the host.
+
+### Internal / API
+
+- **Shared adapter extracted to `@softwarity/draw-adapter`**: the per-engine map adapters moved into a standalone, generic, **data-driven** package reused across the @softwarity drawing libs. sigmet-draw now consumes it through thin wrappers (`MapLibreAdapter`/`OpenLayersAdapter`/`LeafletAdapter`) that pre-bind the SIGMET layer manifest + hit set — **construction is unchanged** for hosts (`new MapLibreAdapter({ map })` still works).
+- **Styling is now carried by the data**: each overlay feature embeds its render props, baked from the resolved `SigmetStyle` by `decorate()` (`style-features.ts`), so the adapter never sees a domain type (the ~57 in-adapter `SigmetStyle` references are gone). Live `setStyle(…)` re-bakes and re-renders. No change to the public `SigmetStyle` shape.
+- New exports: `SIGMET_LAYERS`, `SIGMET_HIT`, `decorate`. The `toolbar` / `tooltip` DOM helpers moved into the shared lib (`src/map/toolbar.ts` / `tooltip.ts` removed). `adapter.ts` is now a back-compat shim re-exporting the generic types under their historical names (`OverlayId`, `Projection`, `MapAdapter`, …).
+- The OpenLayers DragPan/`singleclick` fix (1.1.2) and the icon-rotation conventions now live once in the shared lib and apply to all three engines.
+
+### Demo
+
+- Engine switch is now **three-way** — MapLibre / OpenLayers / **Leaflet**.
+
 ---
 
 ## 1.1.3

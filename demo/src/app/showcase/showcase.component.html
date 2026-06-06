@@ -2,10 +2,6 @@
   <h2>Playground</h2>
 
   <div class="controls">
-    <div class="seg" role="group" aria-label="Map engine">
-      <button [class.active]="engine() === 'maplibre'" (click)="setEngine('maplibre')">MapLibre</button>
-      <button [class.active]="engine() === 'openlayers'" (click)="setEngine('openlayers')">OpenLayers</button>
-    </div>
     <label class="fir">
       FIR
       <select (change)="onFir($event)">
@@ -20,10 +16,7 @@
         }
       </select>
     </label>
-    <label class="ro" title="Freeze editing (sigmet.setReadonly)">
-      <input type="checkbox" [checked]="readonly()" (change)="toggleReadonly()" />
-      Read-only
-    </label>
+    <button class="rnd" type="button" title="Pick a random FIR" aria-label="Pick a random FIR" (click)="randomFir()">🎲</button>
   </div>
 
   <div class="stage">
@@ -48,6 +41,7 @@ ${tbOff}  toolbar: {                       // turnkey native toolbar (comment ou
 ${labelFn}  label: (r) => r.tac,
 ${tooltipFn}  tooltip: (r) => r.tac,   // floating tooltip on hover over the geometry
   nauticalMilesOnly: ${nmOnly},
+  readonly: ${readonly},                 // start frozen: no handles/toolbar, area + label stay
   style: {
 ${area}    area: {                          // selected zone: fill + outline
       fill: "${areaColor}", opacity: ${areaOpacity},
@@ -71,7 +65,8 @@ ${tooltip}    tooltip: {                       // floating hover bubble
 
 // comment the next line out → the tropical-cyclone button greys out:
 ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
-        <code-binding key="adapter" type="select" options="MapLibreAdapter,OpenLayersAdapter" [value]="adapterName()"></code-binding>
+        <code-binding key="adapter" type="select" options="MapLibreAdapter,OpenLayersAdapter,LeafletAdapter" [value]="adapterName()" carousel></code-binding>
+        <code-binding key="readonly" type="boolean" [value]="readonly()"></code-binding>
         <code-binding key="mapImport" type="readonly" [value]="mapImport()"></code-binding>
         <code-binding key="tbOff" type="comment" value="true"></code-binding>
         <code-binding key="tcEnabled" type="comment" value="true"></code-binding>
@@ -81,7 +76,7 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
         <code-binding key="tbEdge2" type="readonly" [value]="tbEdge2()"></code-binding>
         <code-binding key="tbPad1" type="number" value="10" min="0" max="60" step="2"></code-binding>
         <code-binding key="tbPad2" type="number" value="10" min="0" max="60" step="2"></code-binding>
-        <code-binding key="labelFn" type="comment" value="true"></code-binding>
+        <code-binding key="labelFn" type="comment" value="false"></code-binding>
         <code-binding key="tooltipFn" type="comment" value="false"></code-binding>
         <code-binding key="nmOnly" type="boolean" value="false"></code-binding>
         <code-binding key="area" type="comment" value="false"></code-binding>
@@ -109,8 +104,8 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
   </div>
   <div class="tac">{{ tac() }}</div>
   <p class="hint">
-    The toolbar is the engine's <strong>native control</strong>, with SVG icons (MapLibre vs
-    OpenLayers styling). Select a tool: a default shape is dropped, then drag the handles.
+    The toolbar is the engine's <strong>native control</strong>, with SVG icons (MapLibre /
+    OpenLayers / Leaflet styling). Select a tool: a default shape is dropped, then drag the handles.
   </p>
 
   <h2 class="api">Every tool is a function call</h2>
@@ -147,11 +142,12 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
   <table class="ref">
     <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>adapter</code></td><td><code>MapAdapter</code></td><td>—</td><td><strong>Required.</strong> Wraps your map — <code>new MapLibreAdapter(&#123; map &#125;)</code> or <code>new OpenLayersAdapter(&#123; map &#125;)</code>.</td></tr>
+      <tr><td><code>adapter</code></td><td><code>MapAdapter</code></td><td>—</td><td><strong>Required.</strong> Wraps your map — <code>new MapLibreAdapter(&#123; map &#125;)</code>, <code>new OpenLayersAdapter(&#123; map &#125;)</code> or <code>new LeafletAdapter(&#123; map &#125;)</code> (from <code>&#64;softwarity/sigmet-draw/maplibre</code> · <code>/openlayers</code> · <code>/leaflet</code>).</td></tr>
       <tr><td><code>fir</code></td><td><code>Feature | Polygon | MultiPolygon</code></td><td>—</td><td><strong>Required.</strong> FIR polygon — used for clipping, the centre-inside-FIR constraint and line-endpoint snapping.</td></tr>
       <tr><td><code>label</code></td><td><code>(r) =&gt; string</code></td><td>—</td><td>Dynamic text drawn <em>on</em> the shape (return <code>""</code> to hide).</td></tr>
       <tr><td><code>tooltip</code></td><td><code>(r) =&gt; string</code></td><td>—</td><td>Floating text shown <em>on hover</em> over the geometry.</td></tr>
       <tr><td><code>nauticalMilesOnly</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Force radii/widths to NM (never emit KM).</td></tr>
+      <tr><td><code>readonly</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Start frozen — no handles/toolbar, no editing (area + label stay). Toggle later via <code>setReadonly</code>.</td></tr>
       <tr><td><code>toolbar</code></td><td><code>boolean | ToolbarConfig</code></td><td>—</td><td>Render the turnkey native toolbar (see below). Omit for none.</td></tr>
       <tr><td><code>style</code></td><td><code>SigmetStyleInput</code></td><td><code>DEFAULT_STYLE</code></td><td>Partial style override, merged onto the defaults.</td></tr>
     </tbody>
@@ -170,7 +166,7 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
       <tr><td><code>firBounds()</code> / <code>firCenter()</code></td><td><code>[minLon,minLat,maxLon,maxLat]</code> / <code>LatLng</code></td><td>FIR bbox / centroid (e.g. to fit the map, or as a TC centre).</td></tr>
       <tr><td><code>setStyle(partial)</code></td><td>—</td><td>Restyle live (merged onto the current style).</td></tr>
       <tr><td><code>setLabel(fn|null)</code> / <code>setTooltip(fn|null)</code></td><td>—</td><td>Change/clear the on-shape label / hover tooltip live.</td></tr>
-      <tr><td><code>setReadonly(bool)</code> / <code>isReadonly</code></td><td>— / <code>boolean</code></td><td>Read-only mode: hides handles + toolbar and freezes editing (area + label stay). Toggle the <strong>Read-only</strong> checkbox above.</td></tr>
+      <tr><td><code>setReadonly(bool)</code> / <code>isReadonly</code></td><td>— / <code>boolean</code></td><td>Read-only mode: hides handles + toolbar and freezes editing (area + label stay). Set it initially via the <code>readonly</code> option, or toggle it live in the code panel.</td></tr>
       <tr><td><code>ready()</code> / <code>destroy()</code></td><td><code>Promise</code> / —</td><td>Resolves once grafted / detaches (leaves the host map intact).</td></tr>
     </tbody>
   </table>

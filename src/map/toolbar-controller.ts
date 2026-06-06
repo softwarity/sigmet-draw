@@ -4,15 +4,16 @@
  * group (set up by the adapter); this controller wires them to the draw instance
  * and exposes live-mutable placement + the tropical-cyclone centre.
  */
+import {
+  applyToolbarLayout,
+  type MapAdapter,
+  type ToolbarItem,
+  type ToolbarOptions,
+  type ToolbarPadding,
+  type ToolbarPosition,
+} from "@softwarity/draw-adapter";
+
 import type { LatLng } from "../core/index.js";
-import type {
-  MapAdapter,
-  ToolbarItem,
-  ToolbarOptions,
-  ToolbarPadding,
-  ToolbarPosition,
-} from "./adapter.js";
-import { applyToolbarLayout } from "./toolbar.js";
 import { DEFAULT_TOOLS, TOOL_ICONS } from "./tools.js";
 import type { ToolName } from "./tools.js";
 
@@ -75,7 +76,9 @@ export class SigmetToolbar {
     setOpt(this.layout, "orientation", cfg.orientation);
     setOpt(this.layout, "padding", cfg.padding);
     setOpt(this.layout, "gap", cfg.gap);
-    setOpt(this.layout, "className", cfg.className);
+    // Keep the public `.sigmet-toolbar` CSS hook (the generic adapter tags the
+    // element `.draw-adapter-toolbar`); append any caller class after it.
+    this.layout.className = ["sigmet-toolbar", cfg.className].filter(Boolean).join(" ");
   }
 
   /** @internal — rendered by `SigmetDraw` once the adapter is ready. */
