@@ -1,59 +1,29 @@
-import type { Feature, FeatureCollection, Polygon } from "geojson";
+import type { Feature, Polygon } from "geojson";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { FakeAdapter as BaseFakeAdapter } from "@softwarity/draw-adapter/testing";
 import type { LatLng, SigmetGeometry } from "../src/core/index";
-import type { MapAdapter, OverlayId, PointerEvent, ToolbarItem } from "../src/map/adapter";
+import type { PointerEvent } from "../src/map/adapter";
 import { SigmetDraw } from "../src/map/sigmet-draw";
 
-/** Minimal in-memory MapAdapter: captures overlays + the pointer callback. */
-class FakeAdapter implements MapAdapter {
-  overlays: Partial<Record<OverlayId, FeatureCollection>> = {};
-  cb?: (ev: PointerEvent) => void;
-  constructor(private readonly centre: LatLng) {}
-  ready(): Promise<void> {
-    return Promise.resolve();
-  }
-  setOverlay(id: OverlayId, data: FeatureCollection): void {
-    this.overlays[id] = data;
-  }
-  setTooltip(): void {}
-  addToolbar(_items: ToolbarItem[]): HTMLElement {
-    return {} as HTMLElement;
-  }
-  getCenter(): LatLng {
-    return this.centre;
-  }
-  getViewSpan(): number {
-    return 10;
-  }
-  project(): [number, number] | null {
-    return [0, 0];
-  }
-  unproject(): LatLng | null {
-    return { lat: 0, lon: 0 };
-  }
-  onViewChange(): void {}
-  registerSymbols(): Promise<void> {
-    return Promise.resolve();
-  }
-  setPanEnabled(): void {}
-  setDoubleClickZoom(): void {}
-  setCursor(): void {}
-  onPointer(cb: (ev: PointerEvent) => void): void {
-    this.cb = cb;
-  }
-  destroy(): void {}
-
-  // --- test helpers ---
+/**
+ * The shared in-memory {@link BaseFakeAdapter} (captures overlays, replays pointer
+ * events) plus a few SIGMET-specific test helpers so the call sites stay terse.
+ */
+class FakeAdapter extends BaseFakeAdapter {
+  /** Replay a pointer event over a `handles` feature carrying `role` (the common
+   *  drag case); omit `role` for a plain background event. */
   send(type: PointerEvent["type"], lat: number, lon: number, role?: string): void {
-    const hit = role ? { overlay: "handles" as OverlayId, props: { role } } : undefined;
-    this.cb?.({ type, lngLat: { lat, lon }, ...(hit ? { hit } : {}) });
+    if (role) super.send(type, lat, lon, "handles", { role });
+    else super.send(type, lat, lon);
   }
+  /** A `down` on a draggable guide line carrying `role`. */
   guideDown(role: string, lat: number, lon: number): void {
-    this.cb?.({ type: "down", lngLat: { lat, lon }, hit: { overlay: "guide", props: { role } } });
+    super.send("down", lat, lon, "guide", { role });
   }
+  /** lon/lat of the pushed `handles` feature with `role` (undefined if none). */
   handleAt(role: string): LatLng | undefined {
-    const f = (this.overlays.handles?.features ?? []).find((x) => x.properties?.["role"] === role);
+    const f = this.feature("handles", role);
     if (!f || f.geometry.type !== "Point") return undefined;
     const [lon, lat] = f.geometry.coordinates as [number, number];
     return { lat, lon };
