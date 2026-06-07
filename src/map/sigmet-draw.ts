@@ -21,7 +21,7 @@ import type {
   Position,
 } from "geojson";
 
-import type { MapAdapter, PointerEvent } from "@softwarity/draw-adapter";
+import type { MapAdapter, PointerEvent, SnapshotOptions } from "@softwarity/draw-adapter";
 
 import { toArea, toTAC } from "../core/index.js";
 import type { FirInput, LatLng, SigmetGeometry } from "../core/index.js";
@@ -224,7 +224,20 @@ export class SigmetDraw {
   private readonly tacListeners = new Set<(tac: string) => void>();
   private readonly readyPromise: Promise<void>;
 
-  private active: SigmetGeometry | null = null;
+  private _active: SigmetGeometry | null = null;
+  /** Whether the active shape shows its editing controls (handles & guides). A
+   *  click on the shape selects it; a click on the empty map deselects it (a clean
+   *  view — area + label only, handy for a snapshot). */
+  private selected = true;
+  /** The active geometry. Assigning a *new* (non-null) shape re-selects it; in-place
+   *  edits during a drag mutate the same object, so they leave selection untouched. */
+  private get active(): SigmetGeometry | null {
+    return this._active;
+  }
+  private set active(geom: SigmetGeometry | null) {
+    this._active = geom;
+    if (geom) this.selected = true;
+  }
   private dragTarget: DragTarget | null = null;
   /** Live position of the polygon scale/rotate handle while it is being dragged. */
   private sizeAnchor: LatLng | null = null;
@@ -334,6 +347,34 @@ export class SigmetDraw {
     }
     this._toolbar?.setVisible(!on);
     this.renderActive();
+  }
+
+  /** Whether the active shape currently shows its editing controls. */
+  get isSelected(): boolean {
+    return this.selected;
+  }
+
+  /**
+   * Select / deselect the active shape. Deselecting hides its handles & guides for
+   * a clean view (area + label only — handy before a snapshot) without freezing
+   * edits the way {@link setReadonly} does: clicking the shape re-selects it,
+   * clicking the empty map deselects it. Placing or loading a shape selects it.
+   */
+  setSelected(on: boolean): void {
+    if (on === this.selected) return;
+    this.selected = on;
+    if (!on) this.dragTarget = null; // drop any in-progress drag
+    this.renderActive();
+  }
+
+  /**
+   * Capture the current map (basemap + overlays) as a PNG `Blob`. Tip: deselect
+   * first ({@link setSelected}(false)) for a clean image without the handles.
+   * Not supported on the Leaflet adapter (rejects). `scale` sets the output
+   * pixel-ratio (default = the screen's).
+   */
+  snapshot(opts?: SnapshotOptions): Promise<Blob> {
+    return this.adapter.snapshot(opts);
   }
 
   private applyFir(fir: FirInput): void {
@@ -859,7 +900,28 @@ export class SigmetDraw {
         return;
       }
       case "click": {
-        if (ev.hit?.overlay === "other" && a) {
+        if (!a) return;
+        // A click on the shape selects it (reveals controls); a click on the empty
+        // map deselects it (clean view). While deselected, only the area/marker is
+        // hittable, so a selecting click can't also flip a side.
+        const onShape =
+          ev.hit?.overlay === "area" ||
+          ev.hit?.overlay === "handles" ||
+          ev.hit?.overlay === "guide" ||
+          ev.hit?.overlay === "other";
+        if (!this.selected) {
+          if (onShape) {
+            this.selected = true;
+            this.renderActive();
+          }
+          return;
+        }
+        if (!ev.hit) {
+          this.selected = false; // click outside → deselect
+          this.renderActive();
+          return;
+        }
+        if (ev.hit.overlay === "other") {
           const ll = this.uw(ev.lngLat);
           if (a.kind === "meridian") a.side = a.side === "E" ? "W" : "E";
           else if (a.kind === "parallel") a.side = a.side === "N" ? "S" : "N";
@@ -897,11 +959,19 @@ export class SigmetDraw {
 
   private renderActive(): void {
     this.renderShape();
-    // Disabled (read-only) mode: keep the area + label, drop every grab handle
-    // and guide so nothing looks (or is) editable. Toggling re-renders them.
+    // Read-only mode: keep the area + label, drop every grab handle and guide so
+    // nothing looks (or is) editable. Toggling re-renders them.
     if (this.readOnly) {
       this.push("handles", EMPTY);
       this.push("guide", EMPTY);
+      return;
+    }
+    // Deselected: same clean view, but still re-selectable by clicking the shape.
+    // A point's dot IS the geometry (not a control), so keep it visible.
+    if (!this.selected) {
+      this.push("guide", EMPTY);
+      this.push("other", EMPTY);
+      if (this.active?.kind !== "point") this.push("handles", EMPTY);
     }
   }
 

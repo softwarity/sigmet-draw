@@ -97,8 +97,10 @@ Engine capabilities differ: globe is MapLibre-only (OpenLayers & Leaflet are 2D)
 `latBand()`, `lonBand()`, `quadrant()`, `lineSide()`, `corridor()`, `polygon()`,
 `wideLine()`, `point()`, `entireFir()`, `clear()`, plus `on/off("change"|"tac", cb)`,
 `load(geometry)`, `setFir(fir)`, `firBounds()`, `firCenter()`, `setStyle(…)`,
-`setLabel(fn)`, `setTooltip(fn)`, `ready()`, `destroy()`, and the `toolbar`
-controller (when the `toolbar` option is enabled). See the full reference below.
+`setLabel(fn)`, `setTooltip(fn)`, `setReadonly(bool)`/`isReadonly`,
+`setSelected(bool)`/`isSelected`, `snapshot(opts?)`, `ready()`, `destroy()`, and
+the `toolbar` controller (when the `toolbar` option is enabled). See the full
+reference below.
 
 ### Turnkey toolbar (batteries-included)
 
@@ -116,6 +118,7 @@ const sigmet = new SigmetDraw({
     className: "my-toolbar",                        // extra class for your CSS
     tools: ["circle", "tropicalCyclone", "polygon"],// pick/order (default: all)
     clear: true,                                    // include the clear button
+    snapshot: "native",                             // PNG capture button: none|native|low|medium|high (default native; disabled on Leaflet)
     tcCenter: null,                                 // see below
   },
 });
@@ -218,8 +221,14 @@ toArea(g, { fir });                // GeoJSON Feature, clipped to the FIR
 `firBounds()` → `[minLon,minLat,maxLon,maxLat]` · `firCenter()` → `LatLng` ·
 `setStyle(partial)` · `setLabel(fn|null)` · `setTooltip(fn|null)` ·
 `setReadonly(bool)` / `isReadonly` (read-only mode — hides handles + toolbar,
-freezes editing; area + label stay) · `ready(): Promise` · `destroy()` ·
-`toolbar` (the controller, see below).
+freezes editing; area + label stay) ·
+`setSelected(bool)` / `isSelected` (deselect to hide the editing handles/guides
+for a clean view — area + label only, e.g. before a snapshot — while staying
+editable: clicking the shape re-selects it, clicking the empty map deselects it) ·
+`snapshot(opts?)` → `Promise<Blob>` (PNG of the current map — basemap + overlays;
+`opts.scale` = output pixel-ratio, default the screen's. MapLibre & OpenLayers
+only; rejects on Leaflet) ·
+`ready(): Promise` · `destroy()` · `toolbar` (the controller, see below).
 
 ### `SigmetStyle` tokens
 

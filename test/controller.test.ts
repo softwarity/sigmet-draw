@@ -21,6 +21,10 @@ class FakeAdapter extends BaseFakeAdapter {
   guideDown(role: string, lat: number, lon: number): void {
     super.send("down", lat, lon, "guide", { role });
   }
+  /** A click carrying an arbitrary overlay hit (e.g. the filled `area`). */
+  clickHit(lat: number, lon: number, overlay: string, props: Record<string, unknown> = {}): void {
+    super.send("click", lat, lon, overlay, props);
+  }
   /** lon/lat of the pushed `handles` feature with `role` (undefined if none). */
   handleAt(role: string): LatLng | undefined {
     const f = this.feature("handles", role);
@@ -142,6 +146,48 @@ describe("SigmetDraw controller", () => {
 
     sigmet.setReadonly(false);
     expect((adapter.overlays.handles?.features ?? []).length).toBeGreaterThan(0); // back
+  });
+
+  it("deselects on a click outside and re-selects on a click inside the area", async () => {
+    await sigmet.ready();
+    sigmet.polygon();
+    expect(sigmet.isSelected).toBe(true);
+    expect((adapter.overlays.handles?.features ?? []).length).toBeGreaterThan(0);
+    expect((adapter.overlays.area?.features ?? []).length).toBeGreaterThan(0);
+
+    // Click on the empty map → deselect: handles/guide gone, area + label stay.
+    adapter.send("click", 50, 50); // far outside the FIR → no hit
+    expect(sigmet.isSelected).toBe(false);
+    expect(adapter.overlays.handles?.features ?? []).toHaveLength(0);
+    expect((adapter.overlays.area?.features ?? []).length).toBeGreaterThan(0);
+
+    // A drag on a former handle role does nothing while deselected.
+    adapter.send("down", 7, 7, "v0");
+    adapter.send("move", 8, 8, "v0");
+    adapter.send("up", 8, 8);
+
+    // Click inside the area → re-select: handles back.
+    adapter.clickHit(5, 5, "area");
+    expect(sigmet.isSelected).toBe(true);
+    expect((adapter.overlays.handles?.features ?? []).length).toBeGreaterThan(0);
+  });
+
+  it("snapshot() delegates to the adapter and resolves to a PNG blob", async () => {
+    await sigmet.ready();
+    sigmet.circle();
+    const blob = await sigmet.snapshot();
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe("image/png");
+  });
+
+  it("re-selects automatically when a new shape is placed", async () => {
+    await sigmet.ready();
+    sigmet.polygon();
+    sigmet.setSelected(false);
+    expect(sigmet.isSelected).toBe(false);
+    sigmet.circle(); // placing a new shape selects it
+    expect(sigmet.isSelected).toBe(true);
+    expect((adapter.overlays.handles?.features ?? []).length).toBeGreaterThan(0);
   });
 
   it("drops an out-of-FIR apex whose triangle can't touch the clip, keeps the boundary corners", () => {

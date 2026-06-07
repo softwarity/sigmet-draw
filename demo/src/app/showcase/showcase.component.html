@@ -37,7 +37,8 @@ ${tbOff}  toolbar: {                       // turnkey native toolbar (comment ou
     position: "${tbPosition}",</textarea>
         <textarea condition="tbCentered">    padding: { ${tbEdge1}: "${tbPad1}px" },</textarea>
         <textarea condition="!tbCentered">    padding: { ${tbEdge1}: "${tbPad1}px", ${tbEdge2}: "${tbPad2}px" },</textarea>
-        <textarea>  },${/tbOff}
+        <textarea>${snap}    snapshot: "${snapLevel}",          // PNG capture button — default: native; "none" hides it
+  },${/tbOff}
 ${labelFn}  label: (r) => r.tac,
 ${tooltipFn}  tooltip: (r) => r.tac,   // floating tooltip on hover over the geometry
   nauticalMilesOnly: ${nmOnly},
@@ -76,6 +77,8 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
         <code-binding key="tbEdge2" type="readonly" [value]="tbEdge2()"></code-binding>
         <code-binding key="tbPad1" type="number" value="10" min="0" max="60" step="2"></code-binding>
         <code-binding key="tbPad2" type="number" value="10" min="0" max="60" step="2"></code-binding>
+        <code-binding key="snap" type="comment" value="false"></code-binding>
+        <code-binding key="snapLevel" type="select" options="none,native,low,medium,high" value="none" carousel></code-binding>
         <code-binding key="labelFn" type="comment" value="false"></code-binding>
         <code-binding key="tooltipFn" type="comment" value="false"></code-binding>
         <code-binding key="nmOnly" type="boolean" value="false"></code-binding>

@@ -76,6 +76,7 @@ export class SigmetToolbar {
     setOpt(this.layout, "orientation", cfg.orientation);
     setOpt(this.layout, "padding", cfg.padding);
     setOpt(this.layout, "gap", cfg.gap);
+    setOpt(this.layout, "snapshot", cfg.snapshot); // PNG "capture map" button (default native)
     // Keep the public `.sigmet-toolbar` CSS hook (the generic adapter tags the
     // element `.draw-adapter-toolbar`); append any caller class after it.
     this.layout.className = ["sigmet-toolbar", cfg.className].filter(Boolean).join(" ");

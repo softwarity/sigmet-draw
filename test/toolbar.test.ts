@@ -82,11 +82,13 @@ describe("applyToolbarLayout — 12 positions", () => {
 describe("SigmetToolbar controller", () => {
   let host: ToolbarHost & Record<string, ReturnType<typeof vi.fn>>;
   let lastItems: ToolbarItem[];
+  let lastOptions: ToolbarOptions | undefined;
 
   const makeAdapter = (): MapAdapter =>
     ({
       addToolbar(items: ToolbarItem[], options?: ToolbarOptions): HTMLElement {
         lastItems = items;
+        lastOptions = options;
         const el = document.createElement("div");
         populateToolbar(el, items, options);
         document.body.appendChild(el);
@@ -114,6 +116,14 @@ describe("SigmetToolbar controller", () => {
     const tb = new SigmetToolbar(host, makeAdapter(), { tools: ["circle"], clear: false });
     tb.attach();
     expect(lastItems.map((i) => i.id)).toEqual(["circle"]);
+  });
+
+  it("forwards the snapshot preset to the adapter's toolbar options", () => {
+    new SigmetToolbar(host, makeAdapter(), { snapshot: "high" }).attach();
+    expect(lastOptions?.snapshot).toBe("high");
+    // …and omits it when unset (lib default `native` applies).
+    new SigmetToolbar(host, makeAdapter(), {}).attach();
+    expect(lastOptions?.snapshot).toBeUndefined();
   });
 
   it("greys out the TC button until tcCenter is set, then enables it", () => {

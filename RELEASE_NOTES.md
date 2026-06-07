@@ -2,9 +2,14 @@
 
 ## 2.0.1
 
+### Features
+
+- **Select / deselect a shape**: clicking the shape selects it (its editing handles & guides show); clicking the empty map deselects it — leaving a clean view (the filled area + label only), which is exactly what you want before a snapshot. Unlike read-only mode, the shape stays editable: clicking it re-selects it. Placing a tool's shape or `load()`-ing one selects it automatically. New API: `setSelected(on)` / `isSelected`. (A point's marker stays visible when deselected — it *is* the geometry, not a control.)
+- **Map snapshot (PNG)**: `sigmet.snapshot(opts?)` captures the current map (basemap + overlays) as a PNG `Blob` (MapLibre & OpenLayers; rejects on Leaflet for now). `opts.scale` sets the output pixel-ratio (default = the screen's). The turnkey toolbar gains a **capture button** via the new `toolbar.snapshot` option (`"none" | "native" | "low" | "medium" | "high"`, default `"native"`); on Leaflet the button shows but is disabled. Pairs with deselect for a clean image. (Requires `@softwarity/draw-adapter` ≥ 0.2.0, where the capture lives.)
+
 ---
 
-## 1.1.4
+## 2.0.0
 
 ### Features
 

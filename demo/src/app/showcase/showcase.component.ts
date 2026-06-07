@@ -19,7 +19,7 @@ import {
   OpenLayersAdapter,
   SigmetDraw,
 } from "@softwarity/sigmet-draw";
-import type { FirInput, SigmetGeometry, SigmetStyleInput, ToolbarPosition } from "@softwarity/sigmet-draw";
+import type { FirInput, SigmetGeometry, SigmetStyleInput, SnapshotLevel, ToolbarPosition } from "@softwarity/sigmet-draw";
 import * as L from "leaflet";
 import { Map as MapLibreMap, NavigationControl } from "maplibre-gl";
 import GeoJSON from "ol/format/GeoJSON";
@@ -114,6 +114,8 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
     "Date line",
     "Multi-polygon",
     "With holes",
+    "Complex",
+    "Small",
     "North pole",
     "South pole",
     "Huge",
@@ -152,6 +154,10 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   private nmOnly = false;
   /** Whether the turnkey toolbar is rendered (toggled via the block comment). */
   private toolbarOn = true;
+  /** Snapshot ("capture map" PNG button) preset. `snapOn=false` → the line is
+   *  commented out → the option is omitted → the lib default (`native`) applies. */
+  private snapOn = false;
+  private snapLevel = "none";
   /** Whether the TC button has a centre (FIR centroid here) → enabled vs greyed. */
   private tcOn = true;
   /** Live toolbar layout edited in the panel (per-side padding by active edges). */
@@ -338,6 +344,16 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
     if (t?.key === "tbOff") {
       this.toolbarOn = t.value === true || t.value === "true";
       void this.rebuild(); // toolbar is a construction-time option
+      return;
+    }
+    if (t?.key === "snap") {
+      this.snapOn = t.value === true || t.value === "true"; // line uncommented?
+      void this.rebuild(); // snapshot is a toolbar construction-time option
+      return;
+    }
+    if (t?.key === "snapLevel") {
+      this.snapLevel = String(t.value);
+      if (this.snapOn) void this.rebuild();
       return;
     }
     if (t?.key === "tcEnabled") {
@@ -560,7 +576,14 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
         // Re-apply any live style edits so they survive an engine switch.
         style: this.styleOverride,
         // Turnkey native toolbar (built-in icons, all tools wired); omit → no toolbar.
-        toolbar: this.toolbarOn ? { position: this.tbPos, padding: this.tbPaddingObj() } : undefined,
+        // `snapshot` adds the PNG "capture map" button; omit it → lib default (native).
+        toolbar: this.toolbarOn
+          ? {
+              position: this.tbPos,
+              padding: this.tbPaddingObj(),
+              ...(this.snapOn ? { snapshot: this.snapLevel as SnapshotLevel } : {}),
+            }
+          : undefined,
       });
       this.sigmet.on("change", (r) => {
         this.tac.set(r.tac);

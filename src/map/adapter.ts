@@ -11,6 +11,8 @@
 export type {
   MapAdapter,
   PointerEvent,
+  SnapshotLevel,
+  SnapshotOptions,
   ToolbarItem,
   ToolbarOptions,
   ToolbarPadding,

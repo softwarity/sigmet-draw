@@ -37,6 +37,8 @@ export type {
   OverlayId,
   PointerEvent,
   Projection,
+  SnapshotLevel,
+  SnapshotOptions,
   ToolbarItem,
   ToolbarOptions,
   ToolbarPadding,
