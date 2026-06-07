@@ -25,7 +25,7 @@ import type { MapAdapter, PointerEvent, SnapshotOptions } from "@softwarity/draw
 
 import { toArea, toTAC } from "../core/index.js";
 import type { FirInput, LatLng, SigmetGeometry } from "../core/index.js";
-import { decorate, toGenericTooltip } from "./style-features.js";
+import { decorate, SNAPSHOT_HIDE, toGenericTooltip } from "./style-features.js";
 import {
   bboxOf,
   bearingDeg,
@@ -368,13 +368,14 @@ export class SigmetDraw {
   }
 
   /**
-   * Capture the current map (basemap + overlays) as a PNG `Blob`. Tip: deselect
-   * first ({@link setSelected}(false)) for a clean image without the handles.
-   * Not supported on the Leaflet adapter (rejects). `scale` sets the output
-   * pixel-ratio (default = the screen's).
+   * Capture the current map (basemap + overlays) as a PNG `Blob`. The editing
+   * chrome (handles + construction guides) is hidden for the capture, so the image
+   * shows only the drawing (area + label) whatever the on-screen selection state.
+   * Pass your own `opts` to override (e.g. `hideOverlays`, `target`, `scale`).
+   * Not supported on the Leaflet adapter (rejects).
    */
   snapshot(opts?: SnapshotOptions): Promise<Blob> {
-    return this.adapter.snapshot(opts);
+    return this.adapter.snapshot({ hideOverlays: SNAPSHOT_HIDE, ...opts });
   }
 
   private applyFir(fir: FirInput): void {

@@ -15,13 +15,16 @@ export const ICONS: Record<string, string> = {
   quadrant: wrap('<line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/>'),
   lineSide: wrap('<line x1="4" y1="20" x2="20" y2="4"/>'),
   corridor: wrap('<line x1="3" y1="15" x2="15" y2="3"/><line x1="9" y1="21" x2="21" y2="9"/>'),
+  // Buffer = the capsule outline of an angled wide line (no centreline); rounded
+  // fold at the bend, inset to stay inside the button.
   wideLine: wrap(
-    // Buffer outline (a capsule/“bean”) around a centreline — shows the width.
-    '<path d="M9 18.5 L19 10.5 A3.2 3.2 0 0 0 15 5.5 L5 13.5 A3.2 3.2 0 0 0 9 18.5 Z"/>' +
-      '<line x1="7" y1="16" x2="17" y2="8" opacity="0.5"/>',
+    '<path d="M4.74 11.57 L10.24 7.57 A3 3 0 0 1 13.76 7.57 L19.26 11.57 A3 3 0 0 1 15.74 16.43 L12 13.71 L8.26 16.43 A3 3 0 0 1 4.74 11.57 Z"/>',
   ),
   polygon: wrap('<polygon points="12,3 21,10 17,21 7,21 3,10"/>'),
-  point: wrap('<circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/>'),
+  // Location pin (wireframe `location_on`) — clearer than a bare dot.
+  point: wrap(
+    '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/>',
+  ),
   // Tornado / tropical-cyclone funnel: stacked narrowing lines + a tail.
   tropicalCyclone: wrap('<path d="M4 5h16M6 9h12M9 13h7M12 17h2"/><path d="M13 17q1 3-1 4"/>'),
   entireFir: wrap('<rect x="3" y="4" width="18" height="16" rx="4"/>'),

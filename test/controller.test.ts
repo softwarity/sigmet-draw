@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { FakeAdapter as BaseFakeAdapter } from "@softwarity/draw-adapter/testing";
 import type { LatLng, SigmetGeometry } from "../src/core/index";
-import type { PointerEvent } from "../src/map/adapter";
+import type { PointerEvent, SnapshotOptions } from "../src/map/adapter";
 import { SigmetDraw } from "../src/map/sigmet-draw";
 
 /**
@@ -24,6 +24,12 @@ class FakeAdapter extends BaseFakeAdapter {
   /** A click carrying an arbitrary overlay hit (e.g. the filled `area`). */
   clickHit(lat: number, lon: number, overlay: string, props: Record<string, unknown> = {}): void {
     super.send("click", lat, lon, overlay, props);
+  }
+  /** Records the opts of the last snapshot() call (super returns the stub blob). */
+  lastSnapshotOpts?: SnapshotOptions;
+  override snapshot(opts?: SnapshotOptions): Promise<Blob> {
+    this.lastSnapshotOpts = opts;
+    return super.snapshot(opts);
   }
   /** lon/lat of the pushed `handles` feature with `role` (undefined if none). */
   handleAt(role: string): LatLng | undefined {
@@ -172,12 +178,17 @@ describe("SigmetDraw controller", () => {
     expect((adapter.overlays.handles?.features ?? []).length).toBeGreaterThan(0);
   });
 
-  it("snapshot() delegates to the adapter and resolves to a PNG blob", async () => {
+  it("snapshot() delegates to the adapter, hides the editing chrome, resolves to a PNG blob", async () => {
     await sigmet.ready();
     sigmet.circle();
     const blob = await sigmet.snapshot();
     expect(blob).toBeInstanceOf(Blob);
     expect(blob.type).toBe("image/png");
+    // The editing chrome (handles + guides + flip-side zone) is hidden by default.
+    expect(adapter.lastSnapshotOpts?.hideOverlays).toEqual(["handles", "guide", "other"]);
+    // Caller opts win.
+    await sigmet.snapshot({ hideOverlays: ["handles"], scale: 2 });
+    expect(adapter.lastSnapshotOpts).toEqual({ hideOverlays: ["handles"], scale: 2 });
   });
 
   it("re-selects automatically when a new shape is placed", async () => {

@@ -5,7 +5,16 @@
 ### Features
 
 - **Select / deselect a shape**: clicking the shape selects it (its editing handles & guides show); clicking the empty map deselects it — leaving a clean view (the filled area + label only), which is exactly what you want before a snapshot. Unlike read-only mode, the shape stays editable: clicking it re-selects it. Placing a tool's shape or `load()`-ing one selects it automatically. New API: `setSelected(on)` / `isSelected`. (A point's marker stays visible when deselected — it *is* the geometry, not a control.)
-- **Map snapshot (PNG)**: `sigmet.snapshot(opts?)` captures the current map (basemap + overlays) as a PNG `Blob` (MapLibre & OpenLayers; rejects on Leaflet for now). `opts.scale` sets the output pixel-ratio (default = the screen's). The turnkey toolbar gains a **capture button** via the new `toolbar.snapshot` option (`"none" | "native" | "low" | "medium" | "high"`, default `"native"`); on Leaflet the button shows but is disabled. Pairs with deselect for a clean image. (Requires `@softwarity/draw-adapter` ≥ 0.2.0, where the capture lives.)
+- **Map snapshot (PNG)**: `sigmet.snapshot(opts?)` captures the current map as a PNG `Blob` (MapLibre & OpenLayers; rejects on Leaflet for now). `opts.scale` sets the output pixel-ratio (default = the screen's); `opts.target` (`"download" | "clipboard" | "blob"`) delivers it. The turnkey toolbar shows a **capture button** by default; configure it via the `toolbar.snapshot` option — `"none" | false | null` to hide it, or an object `{ quality?, onClick?, shutter? }`: `quality` (`"native"` default, or `"low" | "medium" | "high"`) sets the resolution, `onClick` (`"download"` default, or `"clipboard"`) is the plain-click delivery with **⌘/Ctrl-click doing the other one** (previewed on hover), and `shutter` (default `true`) plays a camera-flash feedback on capture. On Leaflet the button shows but is disabled. The capture **hides the editing chrome** (handles + construction guides) automatically, so the image is always the clean drawing (area + label) whatever the on-screen selection — override with `opts.hideOverlays`. (Requires `@softwarity/draw-adapter` ≥ 0.2.5.)
+
+### Changes
+
+- **Toolbar icons refreshed**: the **buffer** (wide line) tool is now an angled capsule outline with a rounded bend (no centreline), and **point** is a location pin (`location_on`) instead of a bare dot — clearer at a glance. Affects the turnkey toolbar (`TOOL_ICONS`).
+
+### Demo
+
+- **Snapshot controls** added to the live playground: capture `quality`, click delivery (`download` / `clipboard`), and the `shutter` flash toggle.
+- **FIR picker** gains two groups before the poles — **Complex** (intricate, high-vertex borders) and **Small** (the smallest FIRs).
 
 ---
 

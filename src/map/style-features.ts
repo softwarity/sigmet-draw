@@ -26,6 +26,11 @@ export const SIGMET_LAYERS: LayerSpec[] = [
 /** Overlays a pointer hit may resolve against (handles/guide/area + the flip-side). */
 export const SIGMET_HIT = new Set(["handles", "guide", "area", "other"]);
 
+/** Editing-chrome overlays hidden during a snapshot, so the captured image shows
+ *  only the drawing (area + label) — not the handles, construction guides, or the
+ *  invisible flip-side click zone (`other`, a faint fill that would otherwise show). */
+export const SNAPSHOT_HIDE = ["handles", "guide", "other"];
+
 // Internal constants previously hard-coded in the engine adapters.
 const OTHER_FILL = "#58a6ff";
 const OTHER_OPACITY = 0.08;

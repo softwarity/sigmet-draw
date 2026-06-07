@@ -118,7 +118,9 @@ const sigmet = new SigmetDraw({
     className: "my-toolbar",                        // extra class for your CSS
     tools: ["circle", "tropicalCyclone", "polygon"],// pick/order (default: all)
     clear: true,                                    // include the clear button
-    snapshot: "native",                             // PNG capture button: none|native|low|medium|high (default native; disabled on Leaflet)
+    snapshot: { quality: "native", onClick: "download", shutter: true }, // 📷 button. quality: native|low|medium|high;
+                                                    // onClick: download|clipboard (⌘/Ctrl-click does the other); shutter:false → no capture flash.
+                                                    // "none"/false hides it; disabled on Leaflet.
     tcCenter: null,                                 // see below
   },
 });
@@ -225,9 +227,10 @@ freezes editing; area + label stay) ·
 `setSelected(bool)` / `isSelected` (deselect to hide the editing handles/guides
 for a clean view — area + label only, e.g. before a snapshot — while staying
 editable: clicking the shape re-selects it, clicking the empty map deselects it) ·
-`snapshot(opts?)` → `Promise<Blob>` (PNG of the current map — basemap + overlays;
-`opts.scale` = output pixel-ratio, default the screen's. MapLibre & OpenLayers
-only; rejects on Leaflet) ·
+`snapshot(opts?)` → `Promise<Blob>` (PNG of the current map — basemap + drawing;
+the editing chrome (handles/guides) is hidden for the capture. `opts.scale` =
+output pixel-ratio, default the screen's; `opts.target` = `download`/`clipboard`/`blob`;
+`opts.hideOverlays` overrides what's hidden. MapLibre & OpenLayers only; rejects on Leaflet) ·
 `ready(): Promise` · `destroy()` · `toolbar` (the controller, see below).
 
 ### `SigmetStyle` tokens

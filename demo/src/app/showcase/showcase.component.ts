@@ -19,7 +19,14 @@ import {
   OpenLayersAdapter,
   SigmetDraw,
 } from "@softwarity/sigmet-draw";
-import type { FirInput, SigmetGeometry, SigmetStyleInput, SnapshotLevel, ToolbarPosition } from "@softwarity/sigmet-draw";
+import type {
+  FirInput,
+  SigmetGeometry,
+  SigmetStyleInput,
+  SnapshotDelivery,
+  SnapshotQuality,
+  ToolbarPosition,
+} from "@softwarity/sigmet-draw";
 import * as L from "leaflet";
 import { Map as MapLibreMap, NavigationControl } from "maplibre-gl";
 import GeoJSON from "ol/format/GeoJSON";
@@ -154,10 +161,16 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   private nmOnly = false;
   /** Whether the turnkey toolbar is rendered (toggled via the block comment). */
   private toolbarOn = true;
-  /** Snapshot ("capture map" PNG button) preset. `snapOn=false` → the line is
-   *  commented out → the option is omitted → the lib default (`native`) applies. */
-  private snapOn = false;
-  private snapLevel = "none";
+  /** Snapshot ("capture map" PNG button) config. The `snapshot: {}` block is always
+   *  present; each field is individually commentable — when its line is commented the
+   *  field is omitted and the lib default applies (native / download / shutter on). */
+  private snapQOn = false;
+  private snapQuality = "native";
+  /** Plain-click delivery (⌘/Ctrl-click does the other). Off → default `download`. */
+  private snapClickOn = false;
+  private snapClickVal = "clipboard";
+  /** Play the camera-flash (shutter) feedback on capture (default true). */
+  private snapShutterVal = true;
   /** Whether the TC button has a centre (FIR centroid here) → enabled vs greyed. */
   private tcOn = true;
   /** Live toolbar layout edited in the panel (per-side padding by active edges). */
@@ -346,14 +359,30 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
       void this.rebuild(); // toolbar is a construction-time option
       return;
     }
-    if (t?.key === "snap") {
-      this.snapOn = t.value === true || t.value === "true"; // line uncommented?
-      void this.rebuild(); // snapshot is a toolbar construction-time option
+    // Snapshot fields — each is a toolbar construction-time option → rebuild.
+    if (t?.key === "snapQ") {
+      this.snapQOn = t.value === true || t.value === "true";
+      void this.rebuild();
       return;
     }
-    if (t?.key === "snapLevel") {
-      this.snapLevel = String(t.value);
-      if (this.snapOn) void this.rebuild();
+    if (t?.key === "snapQuality") {
+      this.snapQuality = String(t.value);
+      void this.rebuild();
+      return;
+    }
+    if (t?.key === "snapClick") {
+      this.snapClickOn = t.value === true || t.value === "true";
+      void this.rebuild();
+      return;
+    }
+    if (t?.key === "snapClickVal") {
+      this.snapClickVal = String(t.value);
+      void this.rebuild();
+      return;
+    }
+    if (t?.key === "snapShutterVal") {
+      this.snapShutterVal = t.value === true || t.value === "true";
+      void this.rebuild();
       return;
     }
     if (t?.key === "tcEnabled") {
@@ -576,12 +605,20 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
         // Re-apply any live style edits so they survive an engine switch.
         style: this.styleOverride,
         // Turnkey native toolbar (built-in icons, all tools wired); omit → no toolbar.
-        // `snapshot` adds the PNG "capture map" button; omit it → lib default (native).
+        // `snapshot` adds the PNG "capture map" button; omit it → lib default (native,
+        // onClick: download). The button always offers both deliveries (⌘/Ctrl-click
+        // does the other one).
         toolbar: this.toolbarOn
           ? {
               position: this.tbPos,
               padding: this.tbPaddingObj(),
-              ...(this.snapOn ? { snapshot: this.snapLevel as SnapshotLevel } : {}),
+              // The snapshot block is always present; each field is opt-in (omitted →
+              // lib default: native / download / shutter on).
+              snapshot: {
+                ...(this.snapQOn ? { quality: this.snapQuality as SnapshotQuality } : {}),
+                ...(this.snapClickOn ? { onClick: this.snapClickVal as SnapshotDelivery } : {}),
+                shutter: this.snapShutterVal,
+              },
             }
           : undefined,
       });

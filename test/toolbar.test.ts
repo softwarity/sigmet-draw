@@ -118,12 +118,17 @@ describe("SigmetToolbar controller", () => {
     expect(lastItems.map((i) => i.id)).toEqual(["circle"]);
   });
 
-  it("forwards the snapshot preset to the adapter's toolbar options", () => {
-    new SigmetToolbar(host, makeAdapter(), { snapshot: "high" }).attach();
-    expect(lastOptions?.snapshot).toBe("high");
-    // …and omits it when unset (lib default `native` applies).
+  it("forwards the snapshot config and bakes in the editing chrome to hide", () => {
+    new SigmetToolbar(host, makeAdapter(), { snapshot: { quality: "high", onClick: "clipboard" } }).attach();
+    // sigmet declares handles + guides as chrome to hide for a clean capture; the
+    // caller's own options merge on top.
+    expect(lastOptions?.snapshot).toEqual({ hideOverlays: ["handles", "guide", "other"], quality: "high", onClick: "clipboard" });
+    // …and still hides the chrome when the caller passes nothing.
     new SigmetToolbar(host, makeAdapter(), {}).attach();
-    expect(lastOptions?.snapshot).toBeUndefined();
+    expect(lastOptions?.snapshot).toEqual({ hideOverlays: ["handles", "guide", "other"] });
+    // An explicit off value is passed through untouched (no button).
+    new SigmetToolbar(host, makeAdapter(), { snapshot: "none" }).attach();
+    expect(lastOptions?.snapshot).toBe("none");
   });
 
   it("greys out the TC button until tcCenter is set, then enables it", () => {

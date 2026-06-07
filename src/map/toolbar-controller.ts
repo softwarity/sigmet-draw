@@ -14,6 +14,7 @@ import {
 } from "@softwarity/draw-adapter";
 
 import type { LatLng } from "../core/index.js";
+import { SNAPSHOT_HIDE } from "./style-features.js";
 import { DEFAULT_TOOLS, TOOL_ICONS } from "./tools.js";
 import type { ToolName } from "./tools.js";
 
@@ -76,7 +77,15 @@ export class SigmetToolbar {
     setOpt(this.layout, "orientation", cfg.orientation);
     setOpt(this.layout, "padding", cfg.padding);
     setOpt(this.layout, "gap", cfg.gap);
-    setOpt(this.layout, "snapshot", cfg.snapshot); // PNG "capture map" button (default native)
+    // PNG "capture map" button (default native). Sigmet declares its editing chrome
+    // (handles + construction guides) as `hideOverlays` so the captured image is the
+    // clean drawing — area + label only — without touching the on-screen selection.
+    // A caller's own `snapshot` object still wins (e.g. their own `hideOverlays`).
+    const snap = cfg.snapshot;
+    this.layout.snapshot =
+      snap === "none" || snap === false || snap === null
+        ? snap
+        : { hideOverlays: SNAPSHOT_HIDE, ...(typeof snap === "object" ? snap : {}) };
     // Keep the public `.sigmet-toolbar` CSS hook (the generic adapter tags the
     // element `.draw-adapter-toolbar`); append any caller class after it.
     this.layout.className = ["sigmet-toolbar", cfg.className].filter(Boolean).join(" ");
@@ -97,7 +106,6 @@ export class SigmetToolbar {
       items.push({
         id: method,
         title: spec.title,
-        label: spec.label,
         svg: TOOL_ICONS[method],
         toggle: true,
         onClick:
@@ -114,7 +122,6 @@ export class SigmetToolbar {
       items.push({
         id: "clear",
         title: "Clear",
-        label: "⌫",
         svg: TOOL_ICONS.clear,
         onClick: () => this.host.clear(),
       });
