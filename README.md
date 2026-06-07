@@ -1,8 +1,7 @@
 # @softwarity/sigmet-draw
 
 [![npm version](https://img.shields.io/npm/v/@softwarity/sigmet-draw.svg)](https://www.npmjs.com/package/@softwarity/sigmet-draw)
-[![minzipped size](https://img.shields.io/bundlephobia/minzip/@softwarity/sigmet-draw)](https://bundlephobia.com/package/@softwarity/sigmet-draw)
-[![install size](https://packagephobia.com/badge?p=@softwarity/sigmet-draw)](https://packagephobia.com/result?p=@softwarity/sigmet-draw)
+[![unpacked size](https://img.shields.io/npm/unpacked-size/@softwarity/sigmet-draw)](https://www.npmjs.com/package/@softwarity/sigmet-draw?activeTab=code)
 
 **Works with** &nbsp;<sub>(via <code>@softwarity/draw-adapter</code>)</sub>
 
