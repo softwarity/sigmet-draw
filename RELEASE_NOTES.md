@@ -1,5 +1,9 @@
 # Release Notes
 
+## NEXT RELEASE
+
+---
+
 ## 2.0.2
 
 ### Features
