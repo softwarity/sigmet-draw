@@ -678,6 +678,10 @@ export class SigmetDraw {
         const [minLon, minLat, maxLon, maxLat] = this.firBbox;
         const { lat, lon } = this.uw(ev.lngLat);
         const t = this.dragTarget;
+        // Ctrl (PC/Linux) or ⌘ (Mac) held → a *rigid* line drag: translate the
+        // line as a block (shape frozen) instead of letting its ends re-pin to the
+        // border every frame (which deforms it). Endpoints re-pin on release.
+        const rigid = !!(ev.ctrlKey || ev.metaKey);
         switch (a.kind) {
           case "circle":
             if (t === "center") {
@@ -727,9 +731,12 @@ export class SigmetDraw {
           case "lineSide": {
             const span = Math.max(maxLon - minLon, maxLat - minLat);
             if (t === "line") {
-              // Drag the whole line (translate); endpoints stay pinned to the
-              // border. Reject if the end re-snap left it degenerate/self-crossing.
-              const cand = this.snapEnds(this.translateLine(a.points, lon, lat));
+              // Drag the whole line (translate). Normally each endpoint re-pins to the
+              // *nearest* border point (which warps the end segments). With the modifier
+              // held the interior is rigid and each endpoint slides along the FIR border
+              // by extending its end segment — direction frozen, only length adapts.
+              const moved = this.translateLine(a.points, lon, lat);
+              const cand = rigid ? this.adaptEndsToBorder(moved) : this.snapEnds(moved);
               if (lineUsable(cand, span * 0.05)) a.points = cand;
               break;
             }
@@ -759,9 +766,11 @@ export class SigmetDraw {
           case "corridor": {
             const span = Math.max(maxLon - minLon, maxLat - minLat);
             if (t === "lineA" || t === "lineB") {
-              // Drag one whole leg (translate); endpoints stay pinned to the border.
+              // Drag one whole leg (translate). Modifier held → rigid interior, ends
+              // slide along the border (end segments adapt length, direction frozen).
               const line = t === "lineA" ? a.lineA : a.lineB;
-              const cand = this.snapEnds(this.translateLine(line.points, lon, lat));
+              const moved = this.translateLine(line.points, lon, lat);
+              const cand = rigid ? this.adaptEndsToBorder(moved) : this.snapEnds(moved);
               if (lineUsable(cand, span * 0.05)) line.points = cand;
               break;
             }
@@ -1481,6 +1490,54 @@ export class SigmetDraw {
     out[0] = this.nearestOnFir(out[0]!);
     out[out.length - 1] = this.nearestOnFir(out[out.length - 1]!);
     return out;
+  }
+
+  /**
+   * Rigid-drag end handling: keep the interior points where they are and slide each
+   * endpoint **along its own end segment** until it meets the FIR border — so the end
+   * segments change length but not direction (the line keeps its shape). Falls back to
+   * the nearest border point if the segment's ray doesn't exit the FIR (e.g. its
+   * interior neighbour drifted outside).
+   */
+  private adaptEndsToBorder(points: LatLng[]): LatLng[] {
+    const n = points.length;
+    if (n < 2) return points;
+    const out = points.slice();
+    const dir0 = { lon: out[0]!.lon - out[1]!.lon, lat: out[0]!.lat - out[1]!.lat };
+    out[0] = this.firRayExit(out[1]!, dir0) ?? this.nearestOnFir(out[0]!);
+    const dirN = { lon: out[n - 1]!.lon - out[n - 2]!.lon, lat: out[n - 1]!.lat - out[n - 2]!.lat };
+    out[n - 1] = this.firRayExit(out[n - 2]!, dirN) ?? this.nearestOnFir(out[n - 1]!);
+    return out;
+  }
+
+  /**
+   * First crossing of the ray `origin + t·dir` (t > 0) with the FIR border, or `null`
+   * if it never exits. Used to extend a line's end segment onto the border without
+   * changing its direction.
+   */
+  private firRayExit(origin: LatLng, dir: { lon: number; lat: number }): LatLng | null {
+    const eps = 1e-9;
+    let bestT = Infinity;
+    let best: LatLng | null = null;
+    for (const ring of this.firRingList) {
+      for (let i = 0; i + 1 < ring.length; i++) {
+        const a = ring[i]!;
+        const b = ring[i + 1]!;
+        const ex = b[0] - a[0];
+        const ey = b[1] - a[1];
+        const det = ex * dir.lat - ey * dir.lon;
+        if (Math.abs(det) < 1e-12) continue; // parallel
+        const wx = a[0] - origin.lon;
+        const wy = a[1] - origin.lat;
+        const t = (ex * wy - ey * wx) / det; // along the ray
+        const s = (dir.lon * wy - dir.lat * wx) / det; // along the border segment
+        if (t > eps && s >= -eps && s <= 1 + eps && t < bestT) {
+          bestT = t;
+          best = { lon: origin.lon + dir.lon * t, lat: origin.lat + dir.lat * t };
+        }
+      }
+    }
+    return best;
   }
 
   /**

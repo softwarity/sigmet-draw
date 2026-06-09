@@ -51,6 +51,12 @@ Lines/polygons drop their interior points **collinear** with their neighbours
 from the result (and grey them out); line endpoints snap to the FIR boundary;
 dragging a vertex near collinearity snaps it onto the line.
 
+**Rigid line drag** — dragging the *body* of a `lineSide` / `corridor` line normally
+lets it flex: each endpoint snaps to the *nearest* border point, which bends the end
+segments. Hold **Ctrl** (⌘ on Mac) to keep the line's **direction frozen** instead —
+the interior stays rigid and each endpoint keeps following the FIR border by stretching
+its end segment (only the length adapts, not the angle).
+
 **Radius/width units** follow the 2-digit/3-digit TAC rule: KM up to the cap,
 then NM (physically larger), capped — circle/wide-line `0…99`, tropical cyclone
 `0…999`. Pass `nauticalMilesOnly: true` to always emit NM. The tropical-cyclone
@@ -112,21 +118,21 @@ const sigmet = new SigmetDraw({
   toolbar: {                                       // presence renders the toolbar
     position: "top-left",                          // see the 12 positions below
     padding: { top: "12px", left: "8px" },         // CSS length, or per-side
-    gap: "2px",                                     // spacing between buttons
-    orientation: "horizontal",                     // optional; implied by position
+    gap: "2px",                                     // spacing between buttons (flow is derived from position)
     className: "my-toolbar",                        // extra class for your CSS
     tools: ["circle", "tropicalCyclone", "polygon"],// pick/order (default: all)
     clear: true,                                    // include the clear button
     snapshot: { quality: "native", onClick: "download", shutter: true }, // 📷 button. quality: native|low|medium|high;
                                                     // onClick: download|clipboard (⌘/Ctrl-click does the other); shutter:false → no capture flash.
                                                     // "none"/false hides it; disabled on Leaflet.
+    lock: true,                                     // 🔒 "lock map" button (freezes pan/zoom while drawing); false hides it
     tcCenter: null,                                 // see below
   },
 });
 ```
 
 **Positions** — the first token is the anchored edge (which also sets the bar's
-orientation: `top`/`bottom` ⇒ horizontal, `left`/`right` ⇒ vertical); a bare edge
+flow: `top`/`bottom` ⇒ horizontal, `left`/`right` ⇒ vertical); a bare edge
 is centred along it:
 
 ```
@@ -138,6 +144,9 @@ right       right-top    right-bottom
 
 **Padding** is a CSS length applied to the anchored edge(s), or a per-side object
 `{ top?, right?, bottom?, left? }`.
+
+The **🔒 lock-map** button (`lock`, default on) and the **📷 snapshot** button sit at
+the end of the bar; set `lock: false` to hide the lock button.
 
 Then tweak it **live** through `sigmet.toolbar`:
 
@@ -248,12 +257,13 @@ Helpers: `DEFAULT_STYLE`, `mergeStyle(base, partial)`, `rgba(hex, opacity)`.
 
 ### `ToolbarConfig` / `sigmet.toolbar`
 
-Config (construction): `position` (12 values, see above), `padding`
-(`string | { top?, right?, bottom?, left? }`), `gap`, `orientation`, `className`,
-`tools` (`ToolName[]`), `clear` (`boolean`), `tcCenter` (`LatLng | null`).
+Config (construction): `position` (12 values, see above — the bar's flow is derived
+from it), `padding` (`string | { top?, right?, bottom?, left? }`), `gap`, `className`,
+`tools` (`ToolName[]`), `clear` (`boolean`), `snapshot`, `lock` (`boolean`, the 🔒
+"lock map" button — default on), `tcCenter` (`LatLng | null`).
 Live via `sigmet.toolbar`: `tcCenter` (set to enable the TC button / `null` to grey
-it out), `position`, `orientation`, `padding`, `gap`. Build a fully custom toolbar
-with `adapter.addToolbar(items, options)` + the exported `DEFAULT_TOOLS` / `TOOL_ICONS`.
+it out), `position`, `padding`, `gap`. Build a fully custom toolbar with
+`adapter.addToolbar(items, options)` + the exported `DEFAULT_TOOLS` / `TOOL_ICONS`.
 
 ## Architecture
 

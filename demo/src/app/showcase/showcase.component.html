@@ -25,7 +25,7 @@
     </div>
     <aside class="stage-style" (change)="onPanelChange($event)">
       <interactive-code language="typescript" show-copy>
-        <textarea>import { SigmetDraw, ${adapter} } from "@softwarity/sigmet-draw";
+        <textarea ngNonBindable>import { SigmetDraw, ${adapter} } from "@softwarity/sigmet-draw";
 ${mapImport}
 
 const map = new Map({ /* your basemap, controls, projection */ });
@@ -35,13 +35,14 @@ const sigmet = new SigmetDraw({
   fir,
 ${tbOff}  toolbar: {                       // turnkey native toolbar (comment out → none)
     position: "${tbPosition}",</textarea>
-        <textarea condition="tbCentered">    padding: { ${tbEdge1}: "${tbPad1}px" },</textarea>
-        <textarea condition="!tbCentered">    padding: { ${tbEdge1}: "${tbPad1}px", ${tbEdge2}: "${tbPad2}px" },</textarea>
-        <textarea>    snapshot: {                        // 📷 capture button — defaults: native / download
+        <textarea ngNonBindable condition="tbCentered">    padding: { ${tbEdge1}: "${tbPad1}px" },</textarea>
+        <textarea ngNonBindable condition="!tbCentered">    padding: { ${tbEdge1}: "${tbPad1}px", ${tbEdge2}: "${tbPad2}px" },</textarea>
+        <textarea ngNonBindable>    snapshot: {                        // 📷 capture button — defaults: native / download
 ${snapQ}      quality: "${snapQuality}",         // native | low | medium | high
 ${snapClick}      onClick: "${snapClickVal}",        // download | clipboard — ⌘/Ctrl-click does the other
       shutter: ${snapShutterVal},        // camera-flash feedback on capture (true/false)
     },
+    lock: ${lockVal},                    // 🔒 "lock map" button (freezes pan/zoom while drawing)
   },${/tbOff}
 ${labelFn}  label: (r) => r.tac,
 ${tooltipFn}  tooltip: (r) => r.tac,   // floating tooltip on hover over the geometry
@@ -86,6 +87,7 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
         <code-binding key="snapClick" type="comment" value="false"></code-binding>
         <code-binding key="snapClickVal" type="select" options="clipboard,download" value="clipboard" carousel></code-binding>
         <code-binding key="snapShutterVal" type="boolean" value="true"></code-binding>
+        <code-binding key="lockVal" type="boolean" value="true"></code-binding>
         <code-binding key="labelFn" type="comment" value="false"></code-binding>
         <code-binding key="tooltipFn" type="comment" value="false"></code-binding>
         <code-binding key="nmOnly" type="boolean" value="false"></code-binding>
@@ -197,9 +199,9 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
   <table class="ref">
     <thead><tr><th>Field</th><th>Type</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>position</code></td><td><code>top · top-left · top-right · bottom · bottom-left · bottom-right · left · left-top · left-bottom · right · right-top · right-bottom</code></td><td>Anchored edge (sets orientation: top/bottom ⇒ horizontal, left/right ⇒ vertical); a bare edge is centred. <em>Live.</em></td></tr>
-      <tr><td><code>padding</code></td><td><code>string | &#123; top?, right?, bottom?, left? &#125;</code></td><td>Offset from the anchored edge(s) — a CSS length or per-side. <em>Live.</em></td></tr>
-      <tr><td><code>gap</code> / <code>orientation</code></td><td><code>string</code> / <code>"horizontal" | "vertical"</code></td><td>Space between buttons / override the implied orientation. <em>Live.</em></td></tr>
+      <tr><td><code>position</code></td><td><code>top · top-left · top-right · bottom · bottom-left · bottom-right · left · left-top · left-bottom · right · right-top · right-bottom</code></td><td>Anchored edge; the bar's flow is derived from it (top/bottom ⇒ horizontal, left/right ⇒ vertical); a bare edge is centred. <em>Live.</em></td></tr>
+      <tr><td><code>padding</code> / <code>gap</code></td><td><code>string | &#123; top?, right?, bottom?, left? &#125;</code> / <code>string</code></td><td>Offset from the anchored edge(s) / space between buttons. <em>Live.</em></td></tr>
+      <tr><td><code>snapshot</code> / <code>lock</code></td><td><code>&#123; quality?, onClick?, … &#125; | "none"</code> / <code>boolean</code></td><td>📷 capture button (config) / 🔒 "lock map" button — freezes pan/zoom while drawing (default on).</td></tr>
       <tr><td><code>tcCenter</code></td><td><code>LatLng | null</code></td><td>Centre for the tropical-cyclone tool — the button is greyed until set. <em>Live.</em></td></tr>
       <tr><td><code>tools</code> / <code>clear</code> / <code>className</code></td><td><code>ToolName[]</code> / <code>boolean</code> / <code>string</code></td><td>Pick/order the tools / include the clear button / extra CSS class (config-time).</td></tr>
     </tbody>
@@ -211,13 +213,13 @@ ${tcEnabled}sigmet.toolbar.tcCenter = sigmet.firCenter();</textarea>
     the rest keeps its current value.
   </p>
   <interactive-code language="typescript" show-copy>
-    <textarea>sigmet.setStyle({ area: { fill: { opacity: 0.5 } } });
+    <textarea ngNonBindable>sigmet.setStyle({ area: { fill: { opacity: 0.5 } } });
 sigmet.setLabel((r) => r.geometry.kind);   // or change the dynamic text</textarea>
   </interactive-code>
 
   <h2 class="api">Core only (no map)</h2>
   <interactive-code language="typescript" show-copy>
-    <textarea>import { toTAC, fromTAC, toArea } from "@softwarity/sigmet-draw/core";
+    <textarea ngNonBindable>import { toTAC, fromTAC, toArea } from "@softwarity/sigmet-draw/core";
 
 const g = fromTAC("WI 250NM OF PSN N2706 W07306");
 toTAC(g);             // "WI 250NM OF PSN N2706 W07306"

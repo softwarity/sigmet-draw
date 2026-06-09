@@ -74,9 +74,9 @@ export class SigmetToolbar {
     this.clearBtn = cfg.clear !== false;
     this._tcCenter = cfg.tcCenter ?? null;
     setOpt(this.layout, "position", cfg.position);
-    setOpt(this.layout, "orientation", cfg.orientation);
     setOpt(this.layout, "padding", cfg.padding);
     setOpt(this.layout, "gap", cfg.gap);
+    setOpt(this.layout, "lock", cfg.lock); // "lock map" toggle at the end of the bar (default on)
     // PNG "capture map" button (default native). Sigmet declares its editing chrome
     // (handles + construction guides) as `hideOverlays` so the captured image is the
     // clean drawing — area + label only — without touching the on-screen selection.
@@ -162,14 +162,6 @@ export class SigmetToolbar {
   }
   set position(v: ToolbarPosition | undefined) {
     setOpt(this.layout, "position", v);
-    this.reapply();
-  }
-
-  get orientation(): "horizontal" | "vertical" | undefined {
-    return this.layout.orientation;
-  }
-  set orientation(v: "horizontal" | "vertical" | undefined) {
-    setOpt(this.layout, "orientation", v);
     this.reapply();
   }
 

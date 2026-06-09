@@ -21,6 +21,14 @@ class FakeAdapter extends BaseFakeAdapter {
   guideDown(role: string, lat: number, lon: number): void {
     super.send("down", lat, lon, "guide", { role });
   }
+  /** A `move` carrying modifier keys (e.g. Ctrl/⌘ for a rigid line drag). */
+  moveMods(
+    lat: number,
+    lon: number,
+    mods: Partial<Pick<PointerEvent, "ctrlKey" | "metaKey" | "shiftKey" | "altKey">>,
+  ): void {
+    super.send("move", lat, lon, undefined, undefined, mods);
+  }
   /** A click carrying an arbitrary overlay hit (e.g. the filled `area`). */
   clickHit(lat: number, lon: number, overlay: string, props: Record<string, unknown> = {}): void {
     super.send("click", lat, lon, overlay, props);
@@ -189,6 +197,40 @@ describe("SigmetDraw controller", () => {
     // Caller opts win.
     await sigmet.snapshot({ hideOverlays: ["handles"], scale: 2 });
     expect(adapter.lastSnapshotOpts).toEqual({ hideOverlays: ["handles"], scale: 2 });
+  });
+
+  // A point sitting on the square FIR (0,0)-(10,10) border.
+  const onBorder = (p: LatLng): boolean =>
+    [p.lat, p.lon].some((v) => Math.abs(v) < 1e-6 || Math.abs(v - 10) < 1e-6);
+  const linePts = (): LatLng[] =>
+    (last as Extract<SigmetGeometry, { kind: "lineSide" }>).points;
+
+  it("rigid (Ctrl/⌘) line drag freezes the direction; endpoints follow the border", () => {
+    sigmet.lineSide(); // a straight SW–NE diagonal across the square FIR
+    expect(last?.kind).toBe("lineSide");
+    const p0 = { ...linePts()[0]! };
+
+    // Grab the line body and drag it *perpendicular* to itself, modifier held.
+    adapter.guideDown("line", p0.lat, p0.lon);
+    adapter.moveMods(p0.lat - 1, p0.lon + 1, { ctrlKey: true });
+
+    // Direction frozen → the line stays straight (interior stays collinear, so it
+    // minimises back to its 2 endpoints), and both ends slide along the FIR border.
+    const pts = linePts();
+    expect(pts.length).toBe(2);
+    expect(onBorder(pts[0]!)).toBe(true);
+    expect(onBorder(pts[pts.length - 1]!)).toBe(true);
+  });
+
+  it("normal line drag (no modifier) warps the line at the ends", () => {
+    sigmet.lineSide();
+    const p0 = { ...linePts()[0]! };
+    adapter.guideDown("line", p0.lat, p0.lon);
+    // Same drag, no modifier: nearest-point snapping bends the end segments, so the
+    // line is no longer straight and keeps its interior points.
+    adapter.send("move", p0.lat - 1, p0.lon + 1);
+    expect(linePts().length).toBeGreaterThan(2);
+    expect(onBorder(linePts()[0]!)).toBe(true);
   });
 
   it("re-selects automatically when a new shape is placed", async () => {

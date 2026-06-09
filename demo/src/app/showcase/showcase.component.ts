@@ -171,6 +171,8 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
   private snapClickVal = "clipboard";
   /** Play the camera-flash (shutter) feedback on capture (default true). */
   private snapShutterVal = true;
+  /** Show the "lock map" toggle button at the end of the toolbar (default true). */
+  private lockVal = true;
   /** Whether the TC button has a centre (FIR centroid here) → enabled vs greyed. */
   private tcOn = true;
   /** Live toolbar layout edited in the panel (per-side padding by active edges). */
@@ -382,6 +384,11 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
     }
     if (t?.key === "snapShutterVal") {
       this.snapShutterVal = t.value === true || t.value === "true";
+      void this.rebuild();
+      return;
+    }
+    if (t?.key === "lockVal") {
+      this.lockVal = t.value === true || t.value === "true";
       void this.rebuild();
       return;
     }
@@ -619,6 +626,7 @@ export class ShowcaseComponent implements AfterViewInit, OnDestroy {
                 ...(this.snapClickOn ? { onClick: this.snapClickVal as SnapshotDelivery } : {}),
                 shutter: this.snapShutterVal,
               },
+              lock: this.lockVal,
             }
           : undefined,
       });

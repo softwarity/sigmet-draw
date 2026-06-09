@@ -71,12 +71,6 @@ describe("applyToolbarLayout — 12 positions", () => {
     expect(el.style.top).toBe("4px");
     expect(el.style.left).toBe("20px");
   });
-
-  it("orientation override beats the edge default", () => {
-    const el = document.createElement("div");
-    applyToolbarLayout(el, { position: "top", orientation: "vertical" });
-    expect(el.style.flexDirection).toBe("column");
-  });
 });
 
 describe("SigmetToolbar controller", () => {
@@ -110,6 +104,13 @@ describe("SigmetToolbar controller", () => {
     const tb = new SigmetToolbar(host, makeAdapter(), { tools: ["circle", "polygon"] });
     tb.attach();
     expect(lastItems.map((i) => i.id)).toEqual(["circle", "polygon", "clear"]);
+  });
+
+  it("forwards the lock option to the adapter's toolbar options", () => {
+    new SigmetToolbar(host, makeAdapter(), { lock: false }).attach();
+    expect(lastOptions?.lock).toBe(false);
+    new SigmetToolbar(host, makeAdapter(), {}).attach();
+    expect(lastOptions?.lock).toBeUndefined(); // omitted → lib default (shown)
   });
 
   it("omits the clear button when clear:false", () => {

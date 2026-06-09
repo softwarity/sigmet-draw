@@ -2,6 +2,23 @@
 
 ## 2.0.2
 
+### Features
+
+- **Rigid line drag (Ctrl/⌘)**: dragging the body of a `lineSide` / `corridor` line normally bends it (each endpoint snaps to the *nearest* border point, warping the end segments). Holding **Ctrl** (⌘ on Mac) freezes the line's **direction** — the interior stays rigid and the endpoints keep following the FIR border, the end segments only changing length. (Reads the modifier from the adapter's `PointerEvent`, ≥ 0.2.9.)
+- **"Lock map" button**: new `toolbar.lock` option (default `true`) — a 🔒 toggle at the end of the bar that freezes pan/zoom/rotate so the map can't move while drawing; `lock: false` hides it.
+
+### Breaking
+
+- **`toolbar.orientation` removed**: the bar's flow is now derived from `position` (top/bottom edge ⇒ horizontal row, left/right ⇒ vertical column). Drop any `orientation` you passed; the live `sigmet.toolbar.orientation` getter/setter is gone too. (Mirrors `@softwarity/draw-adapter` ≥ 0.2.7.)
+
+### Internal
+
+- Bumped `@softwarity/draw-adapter` to **≥ 0.2.9** (`PointerEvent` modifier keys for the rigid drag; lock button + `setInteractive`; per-feature label boxes `textBoxSize`/`textBoxRadius`; the 0.2.6 double-click-edit fix on OpenLayers/Leaflet; `orientation` removal). Toolbar submenus are available in the adapter but not surfaced by sigmet yet.
+
+### Demo
+
+- A **lock-map** toggle added to the toolbar playground.
+
 ---
 
 ## 2.0.1
