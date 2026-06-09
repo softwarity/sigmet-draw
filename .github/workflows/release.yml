@@ -39,6 +39,6 @@ jobs:
                   npm run build
                   npm test
 
-            - uses: softwarity/release-notes-action@v1
+            - uses: softwarity/release-flow@v1
               with:
                   bump: ${{ inputs.bump }} # the value picked in the dropdown
