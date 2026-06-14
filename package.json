@@ -51,7 +51,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@softwarity/draw-adapter": "^0.3.3",
+    "@softwarity/draw-adapter": "^0.4.0",
     "@turf/boolean-point-in-polygon": "^7.1.0",
     "@turf/buffer": "^7.1.0",
     "@turf/circle": "^7.1.0",
