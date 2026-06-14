@@ -2,6 +2,10 @@
 
 ## NEXT RELEASE
 
+---
+
+## 2.1.0
+
 Maintenance release — **no `@softwarity/sigmet-draw` source or API change**. It bumps the shared **`@softwarity/draw-adapter`** from **`^0.2.9` → `^0.5.0`**, which carries cross-engine fixes that flow through to the SIGMET drawing on all three maps (MapLibre / OpenLayers / Leaflet).
 
 ### Fixes (inherited from the adapter)
