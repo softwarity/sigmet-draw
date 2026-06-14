@@ -2,9 +2,22 @@
 
 ## NEXT RELEASE
 
----
+Maintenance release — **no `@softwarity/sigmet-draw` source or API change**. It bumps the shared **`@softwarity/draw-adapter`** from **`^0.2.9` → `^0.5.0`**, which carries cross-engine fixes that flow through to the SIGMET drawing on all three maps (MapLibre / OpenLayers / Leaflet).
 
-## 2.0.3
+### Fixes (inherited from the adapter)
+
+- **Escape cancels a draw mode you just started**: after a click on a toolbar button, keyboard focus is returned to the map's key element, so `onKey`/**Escape** keeps firing without having to click the map first. (adapter 0.3.2)
+- **No more listener leaks**: `onViewChange` is now single-slot — re-calling it no longer stacks (OpenLayers) or orphans (MapLibre/Leaflet) `moveend`/move handlers — and the snapshot button's icon-preview no longer leaks `window` listeners when the toolbar is torn down while the pointer is over it. (adapter 0.4.0)
+- **Leaflet — clicking a label selects its shape**: an interactive text call-out now surfaces its click (Leaflet markers defaulted to non-bubbling), completing the label-box click fix. (adapter 0.3.1 / 0.3.2)
+
+### Changes (inherited from the adapter)
+
+- **Toolbar active-tool highlight is now consumer-driven**: the adapter no longer sets a sticky `.active` on click, and the active style is consolidated + configurable across all three engines (incl. MapLibre, which had none). The turnkey SIGMET toolbar does not call `setActiveTool` yet, so a picked draw tool is **no longer kept highlighted** (previously it stayed highlighted on OpenLayers/Leaflet). (adapter 0.5.0)
+
+### Internal
+
+- CI: release workflow switched from `softwarity/release-notes-action@v1` to `softwarity/release-flow@v1`.
+- The adapter's other 0.3–0.5 additions — marker-widget `gauge`/`dial`/`picker` editors, nested toolbar submenus, non-rectangular card frames, live `proj4` reprojection (`setProjection`/`viewArea`/`highlightArea`) — are **not surfaced by sigmet's public API** in this release.
 
 ---
 
